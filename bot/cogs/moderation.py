@@ -1,5 +1,5 @@
 """
-Moderations-Befehle: kick, ban, unban, timeout, warn.
+Moderations-Befehle: kick, ban, unban, timeout, warn, clear.
 
 Alle Befehle sind Hybrid-Commands -> funktionieren als /befehl und !befehl.
 Berechtigung: mindestens MODERATOR (siehe bot/utils/permissions.py).
@@ -175,6 +175,54 @@ class Moderation(commands.Cog):
                                               else "That warning ID was not found."))
             return
         await ctx.send(embed=success_embed(t("moderation.warn_removed", lang, id=warning_id)))
+
+    # ---------- CLEAR ----------
+    @commands.hybrid_command(name="clear", description="Löscht mehrere Nachrichten aus dem Kanal (1-1000).")
+    @app_commands.describe(anzahl="Wie viele Nachrichten gelöscht werden sollen (1-1000)")
+    @commands.guild_only()
+    @require_level(PermissionLevel.MODERATOR)
+    async def clear(self, ctx: commands.Context, anzahl: int):
+        lang = await get_guild_language(ctx.guild.id)
+
+        if anzahl < 1 or anzahl > 1000:
+            await ctx.send(embed=error_embed(
+                "Die Anzahl muss zwischen 1 und 1000 liegen." if lang == "de"
+                else "The amount must be between 1 and 1000."), ephemeral=True)
+            return
+
+        # Bei größeren Mengen kann das Löschen (v.a. wegen Rate-Limits und
+        # eventuell nötiger Einzel-Löschung für Nachrichten älter als 14 Tage)
+        # länger als 3 Sekunden dauern -> defer() nicht vergessen.
+        await ctx.defer(ephemeral=True)
+
+        try:
+            deleted = await ctx.channel.purge(limit=anzahl)
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                "Mir fehlt die Berechtigung 'Nachrichten verwalten' in diesem Kanal." if lang == "de"
+                else "I'm missing the 'Manage Messages' permission in this channel."), ephemeral=True)
+            return
+        except discord.HTTPException as e:
+            await ctx.send(embed=error_embed(
+                f"Fehler beim Löschen: {e}" if lang == "de" else f"Error while deleting: {e}"), ephemeral=True)
+            return
+
+        if len(deleted) < anzahl:
+            extra_note = (
+                " (Der Rest waren vermutlich Nachrichten älter als 14 Tage — die kann Discord nicht "
+                "bulk-löschen — oder es gab im Kanal nicht mehr Nachrichten.)" if lang == "de" else
+                " (The rest were likely messages older than 14 days — Discord can't bulk-delete those — "
+                "or the channel simply didn't have more messages.)"
+            )
+        else:
+            extra_note = ""
+        summary = (
+            f"{len(deleted)} von {anzahl} angeforderten Nachrichten gelöscht.{extra_note}" if lang == "de"
+            else f"{len(deleted)} of {anzahl} requested messages deleted.{extra_note}"
+        )
+        await ctx.send(embed=success_embed(
+            "Nachrichten gelöscht" if lang == "de" else "Messages cleared", summary,
+        ), ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

@@ -85,13 +85,6 @@ AD_TITLE_KEYWORDS = (
 # Vertrauen). Die restlichen sind Bonus-Sender aus sekundären Quellen.
 # .m3u/.pls-Adressen werden jetzt automatisch aufgelöst (siehe
 # _resolve_stream_url), das behebt das Energy-Problem strukturell.
-# Fallback-Sender, falls ein gewählter Sender wiederholt nicht erreichbar ist
-# (siehe _radio_startup_watchdog) -- FM4 ist die am sichersten funktionierende
-# Quelle (offizielle ORF-Adresse). So gibt es nie wieder komplette Stille,
-# selbst wenn eine der Bonus-Sender-URLs veraltet ist.
-FALLBACK_STREAM_URL = "https://orf-live.ors-shoutcast.at/fm4-q2a"
-FALLBACK_STREAM_NAME = "FM4"
-
 RADIO_STREAMS = {
     "electro": "https://orf-live.ors-shoutcast.at/fm4-q2a",
     "techno": "https://orf-live.ors-shoutcast.at/fm4-q2a",
@@ -216,7 +209,6 @@ class MusicPlayer:
     _play_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _consecutive_failures: int = field(default=0, repr=False)
     last_stream_error: str | None = field(default=None, repr=False)
-    _is_fallback: bool = field(default=False, repr=False)
 
     async def extract_track(self, query: str, requested_by: int) -> Track | None:
         loop = asyncio.get_running_loop()
@@ -283,7 +275,6 @@ class MusicPlayer:
         self.radio_genre = genre
         self._consecutive_failures = 0
         self.last_stream_error = None
-        self._is_fallback = False
         self._cancel_ad_watch()
         await self._start_stream(RADIO_STREAMS[genre])
         self._ad_watch_task = asyncio.create_task(self._ad_watch_loop(genre))
@@ -325,11 +316,8 @@ class MusicPlayer:
             voice_client.stop()
 
     async def _radio_startup_watchdog(self, source: _MonitoredSource, raw_url: str) -> None:
-        """Für /radio: derselbe Bytes-Check, zählt aber zusätzlich Fehlschläge.
-        Nach MAX_CONSECUTIVE_FAILURES wird NICHT mehr komplett aufgegeben,
-        sondern automatisch auf FALLBACK_STREAM_URL (FM4, garantiert
-        funktionierend) umgeschaltet -- damit es nie wieder komplette Stille
-        gibt, selbst wenn eine Bonus-Sender-URL veraltet ist."""
+        """Für /radio: derselbe Bytes-Check, zählt aber zusätzlich Fehlschläge
+        und gibt nach MAX_CONSECUTIVE_FAILURES komplett auf."""
         await asyncio.sleep(STARTUP_WATCHDOG_SECONDS)
         if self._active_stream_url != raw_url:
             return  # inzwischen ein anderer Sender/Genre aktiv -> dieser Check ist überholt
@@ -343,17 +331,11 @@ class MusicPlayer:
             raw_url, STARTUP_WATCHDOG_SECONDS, self._consecutive_failures, MAX_CONSECUTIVE_FAILURES,
         )
 
-        if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES and raw_url != FALLBACK_STREAM_URL:
-            self.last_stream_error = (
-                f"Sender nicht erreichbar (nach {MAX_CONSECUTIVE_FAILURES} Versuchen) -- "
-                f"spiele stattdessen {FALLBACK_STREAM_NAME}."
-            )
-            log.warning("Falle auf Fallback-Sender zurück: %s", self.last_stream_error)
-            self._is_fallback = True
-            self._consecutive_failures = 0
-            if self.voice_client and self.voice_client.is_connected():
-                await self._start_stream(FALLBACK_STREAM_URL)
-            return
+        if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            self.last_stream_error = f"Sender nicht erreichbar (nach {MAX_CONSECUTIVE_FAILURES} Versuchen): {raw_url}"
+            log.error("Radio-Modus wird beendet: %s", self.last_stream_error)
+            self.radio_genre = None
+            self._cancel_ad_watch()
 
         if self.voice_client and self.voice_client.is_connected():
             self.voice_client.stop()  # bricht den hängenden FFmpeg-Prozess aktiv ab
@@ -398,7 +380,6 @@ class MusicPlayer:
     def stop_and_clear(self) -> None:
         self.queue.clear()
         self.radio_genre = None
-        self._is_fallback = False
         self._cancel_ad_watch()
         if self.voice_client:
             self.voice_client.stop()
