@@ -1,0 +1,23 @@
+{% extends "admin_base.html" %}
+{% block title %}Dashboard-User — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Dashboard-User ({{ dashboard_users|length }})</h1>
+<p style="color:#8a90a2; font-size:13px;">
+    Login läuft ausschließlich über Discord (OAuth) — es gibt bei uns keine Passwörter
+    oder E-Mail-Adressen zu diesen Usern, weil wir sowas nicht erheben.
+</p>
+
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Discord-Name</th><th>Eigene ID</th><th>Erster Login</th><th>Letzter Login</th></tr>
+        {% for u in dashboard_users %}
+        <tr>
+            <td>{{ u.username }}</td>
+            <td style="font-family:monospace; font-size:12px;">{{ u.id }}</td>
+            <td>{{ u.first_login_at.strftime('%d.%m.%Y %H:%M') }}</td>
+            <td>{{ u.last_login_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

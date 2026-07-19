@@ -12,15 +12,15 @@ import logging
 import pkgutil
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.config import config
 from bot.database.db import init_db, get_session
 from bot.database.models import GuildSettings
-from bot.utils.permissions import InsufficientPermissionError
+from bot.utils.permissions import InsufficientPermissionError, MaintenanceModeError
 from bot.utils.embeds import error_embed
 from bot.utils.i18n import t
-from bot.utils.db_helpers import upsert_bot_guild, remove_bot_guild
+from bot.utils.db_helpers import upsert_bot_guild, remove_bot_guild, get_bot_control_state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("bot.main")
@@ -38,6 +38,29 @@ class AllInOneBot(commands.Bot):
             intents=INTENTS,
             help_command=None,  # eigener /help Command in cogs/info_help.py
         )
+        # Wartungsmodus: wird über das Admin-Panel im Dashboard gesteuert
+        # (separater Prozess) -- der Bot fragt das periodisch selbst ab,
+        # siehe _maintenance_poll_loop() und _global_maintenance_check().
+        self.maintenance_mode = False
+        self.maintenance_reason = ""
+
+    async def _global_maintenance_check(self, ctx: commands.Context) -> bool:
+        if not self.maintenance_mode:
+            return True
+        if ctx.author.id == config.BOT_OWNER_ID:
+            return True  # Bot-Owner ist nie ausgesperrt
+        raise MaintenanceModeError(self.maintenance_reason)
+
+    @tasks.loop(seconds=20)
+    async def _maintenance_poll_loop(self) -> None:
+        try:
+            state = await get_bot_control_state()
+            if state.maintenance_mode != self.maintenance_mode:
+                log.info("Wartungsmodus geändert: %s (Grund: %s)", state.maintenance_mode, state.maintenance_reason)
+            self.maintenance_mode = state.maintenance_mode
+            self.maintenance_reason = state.maintenance_reason
+        except Exception:
+            log.exception("Konnte Wartungsmodus-Status nicht abfragen")
 
     async def load_all_cogs(self) -> None:
         import bot.cogs as cogs_package
@@ -54,9 +77,11 @@ class AllInOneBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await init_db()
+        self.add_check(self._global_maintenance_check)
         await self.load_all_cogs()
         synced = await self.tree.sync()
         log.info("%d Slash-Commands synchronisiert.", len(synced))
+        self._maintenance_poll_loop.start()
 
     async def on_ready(self) -> None:
         log.info("Eingeloggt als %s (ID: %s)", self.user, self.user.id)
@@ -88,6 +113,14 @@ class AllInOneBot(commands.Bot):
 
         if isinstance(error, InsufficientPermissionError):
             await ctx.send(embed=error_embed(t("no_permission", lang)), ephemeral=True)
+            return
+        if isinstance(error, MaintenanceModeError):
+            reason = f"\n{error.reason}" if error.reason else ""
+            await ctx.send(embed=error_embed(
+                "🔧 Wartungsmodus" if lang == "de" else "🔧 Maintenance mode",
+                ("Der Bot befindet sich gerade im Wartungsmodus." if lang == "de"
+                 else "The bot is currently in maintenance mode.") + reason,
+            ), ephemeral=True)
             return
         if isinstance(error, commands.CommandNotFound):
             return

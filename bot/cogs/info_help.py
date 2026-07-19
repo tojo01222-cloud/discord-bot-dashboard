@@ -6,17 +6,9 @@ sowohl als /befehl (Slash) als auch als !befehl (Prefix), ohne doppelten Code.
 import discord
 from discord.ext import commands
 
-from bot.database.db import get_session
-from bot.database.models import GuildSettings
 from bot.utils.embeds import base_embed
 from bot.utils.i18n import t
-from sqlalchemy import select
-
-
-async def get_guild_language(guild_id: int) -> str:
-    async with get_session() as session:
-        settings = await session.get(GuildSettings, guild_id)
-        return settings.language if settings else "de"
+from bot.utils.db_helpers import get_guild_language
 
 
 class InfoHelp(commands.Cog):

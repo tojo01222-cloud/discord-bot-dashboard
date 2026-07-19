@@ -1,0 +1,33 @@
+{% extends "admin_base.html" %}
+{% block title %}Bot-Steuerung — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Bot-Steuerung</h1>
+
+<div class="admin-card">
+    <p><strong>Aktueller Status:</strong> {{ "🔧 Wartungsmodus aktiv" if state.maintenance_mode else "🟢 Normal aktiv" }}</p>
+    {% if state.maintenance_mode and state.maintenance_reason %}
+    <p style="color:#8a90a2;">Grund: {{ state.maintenance_reason }}</p>
+    {% endif %}
+</div>
+
+<p style="color:#8a90a2; font-size:13px; max-width:500px;">
+    Hinweis: Ein echtes Ein-/Ausschalten des Bot-Prozesses ist ohne Zugriff auf die
+    Hoster-Infrastruktur nicht möglich. Der Wartungsmodus lässt den Bot online, aber er
+    reagiert auf keine Befehle mehr (außer dem Bot-Owner). Änderungen brauchen bis zu
+    20 Sekunden, bis der Bot sie übernimmt.
+</p>
+
+<form method="post" action="/admin/bot-control" class="admin-form">
+    <div>
+        <label>
+            <input type="checkbox" name="enable" value="on" {% if state.maintenance_mode %}checked{% endif %}>
+            Wartungsmodus aktivieren
+        </label>
+    </div>
+    <div>
+        <label for="reason">Grund (wird Usern angezeigt)</label>
+        <input type="text" id="reason" name="reason" value="{{ state.maintenance_reason }}" placeholder="z.B. Wartungsarbeiten">
+    </div>
+    <button type="submit" class="btn">Speichern</button>
+</form>
+{% endblock %}

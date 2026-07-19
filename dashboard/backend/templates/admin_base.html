@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin-Panel{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div class="admin-layout">
+        <nav class="admin-sidebar">
+            <div class="admin-brand">🛡️ Admin-Panel</div>
+            <a href="/admin">Übersicht</a>
+            <a href="/admin/servers">Server</a>
+            <a href="/admin/broadcast">Ankündigungen</a>
+            <a href="/admin/bot-control">Bot-Steuerung</a>
+            <a href="/admin/users">Dashboard-User</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/permissions">Rechteverwaltung</a>
+            {% endif %}
+            <div class="admin-sidebar-footer">
+                <span>{{ admin.username if admin }}</span>
+                <a href="/admin/logout">Logout</a>
+            </div>
+        </nav>
+        <main class="admin-content">
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

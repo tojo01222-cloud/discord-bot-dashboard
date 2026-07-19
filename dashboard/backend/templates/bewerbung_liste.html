@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Bewerbungen — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Bewerbungen — {{ guild.name }}</h1>
+
+{% if not applications %}
+<p style="color:#8a90a2;">Noch keine Bewerbungen eingegangen.</p>
+{% else %}
+<div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
+    {% for a in applications %}
+    <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}"
+       style="display:flex; justify-content:space-between; align-items:center; text-decoration:none; color:inherit;
+              background:linear-gradient(160deg,#14161f,#10121a); border:1px solid #262a3a; border-radius:14px; padding:18px 22px;">
+        <div>
+            <div style="font-weight:600;">{{ a.applicant_username }}</div>
+            <div style="color:#8a90a2; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }}</div>
+        </div>
+        <div>
+            {% if a.status == "pending" %}<span class="flash flash-error" style="padding:4px 12px; margin:0;">Offen</span>
+            {% elif a.status == "accepted" %}<span class="flash flash-success" style="padding:4px 12px; margin:0;">Angenommen</span>
+            {% else %}<span class="flash" style="padding:4px 12px; margin:0; background:#262a3a;">Abgelehnt</span>{% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

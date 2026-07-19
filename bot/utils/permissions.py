@@ -31,6 +31,15 @@ class InsufficientPermissionError(commands.CheckFailure):
         super().__init__(f"Benötigte Berechtigungsstufe: {required.name}")
 
 
+class MaintenanceModeError(commands.CheckFailure):
+    """Wird ausgelöst, wenn der Bot über das Admin-Panel in den Wartungsmodus
+    versetzt wurde (siehe bot/main.py, dashboard admin_routes.py)."""
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
+        super().__init__("Bot ist im Wartungsmodus")
+
+
 class PermissionLevel(IntEnum):
     EVERYONE = 0
     TEAM = 1

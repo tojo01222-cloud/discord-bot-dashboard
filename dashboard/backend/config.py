@@ -26,6 +26,14 @@ class DashboardConfig:
     DISCORD_API_BASE = "https://discord.com/api/v10"
     OAUTH_SCOPES = "identify guilds"
 
+    # Admin-Panel-Bootstrap: existiert noch KEIN Admin-Account in der Datenbank,
+    # wird beim Start automatisch genau einer mit diesen Zugangsdaten angelegt
+    # (Passwort wird sofort gehasht gespeichert, nie im Klartext). Bewusst über
+    # Umgebungsvariablen statt eine offene "Account erstellen"-Seite anzubieten
+    # -- sicherer, da nichts öffentlich im Internet erreichbar ist.
+    ADMIN_BOOTSTRAP_USERNAME: str = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "")
+    ADMIN_BOOTSTRAP_PASSWORD: str = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
+
     @classmethod
     def validate(cls) -> None:
         missing = [name for name in

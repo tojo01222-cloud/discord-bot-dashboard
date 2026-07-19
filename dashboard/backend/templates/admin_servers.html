@@ -1,0 +1,23 @@
+{% extends "admin_base.html" %}
+{% block title %}Server — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Server ({{ guilds|length }})</h1>
+
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Name</th><th>Mitglieder</th><th>Server-ID</th><th>Einladung</th></tr>
+        {% for g in guilds %}
+        <tr>
+            <td>{{ g.name }}</td>
+            <td>{{ g.member_count }}</td>
+            <td>{{ g.guild_id }}</td>
+            <td>
+                <form method="post" action="/admin/servers/{{ g.guild_id }}/invite" style="display:inline;">
+                    <button type="submit" class="btn btn-small">Link erzeugen</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

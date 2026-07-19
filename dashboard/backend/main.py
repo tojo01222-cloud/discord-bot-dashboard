@@ -2,10 +2,12 @@
 Dashboard-Backend (Phase 4 — Basis).
 Laeuft als eigener Prozess, getrennt vom Bot (siehe README).
 """
+import logging
 import secrets
 
+import httpx
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -13,6 +15,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from dashboard.backend.config import dashboard_config as cfg
 from dashboard.backend import discord_oauth
 from dashboard.backend.bot_api import fetch_guild_text_channels
+from dashboard.backend.admin_routes import admin_router
+from dashboard.backend.application_routes import application_router
 from bot.database.db import init_db, get_session
 from bot.utils.db_helpers import (
     upsert_dashboard_user,
@@ -21,10 +25,28 @@ from bot.utils.db_helpers import (
     get_or_create_guild_settings,
 )
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+log = logging.getLogger("dashboard.main")
+
 app = FastAPI(title="Bot Dashboard")
 app.add_middleware(SessionMiddleware, secret_key=cfg.SESSION_SECRET, same_site="lax")
 app.mount("/static", StaticFiles(directory="dashboard/backend/static"), name="static")
 templates = Jinja2Templates(directory="dashboard/backend/templates")
+app.include_router(admin_router)
+app.include_router(application_router)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Loggt den VOLLEN Traceback (landet in den Render-Logs) UND zeigt eine
+    # freundliche Seite statt der nackten "Internal Server Error" -- so
+    # bleibt die Ursache immer im Log nachvollziehbar, egal was passiert.
+    log.exception("Unbehandelter Fehler bei %s %s", request.method, request.url.path)
+    return PlainTextResponse(
+        "Es ist ein unerwarteter Fehler aufgetreten. Das wurde geloggt — "
+        "bitte kurz warten und nochmal versuchen, oder den Betreiber kontaktieren.",
+        status_code=500,
+    )
 
 
 @app.on_event("startup")
@@ -41,7 +63,7 @@ def _current_user(request: Request):
 async def index(request: Request):
     if _current_user(request):
         return RedirectResponse("/servers")
-    return templates.TemplateResponse(request, "login.html", {"user": None, "messages": []})
+    return templates.TemplateResponse(request, "landing.html", {"user": None, "messages": []})
 
 
 @app.get("/datenschutz", response_class=HTMLResponse)
@@ -81,7 +103,11 @@ async def auth_callback(request: Request, code: str = "", state: str = ""):
         "dashboard_id": dashboard_user.id,
     }
     request.session["access_token"] = access_token
-    return RedirectResponse("/servers")
+
+    # Falls der Login vom Bewerbungsformular ausgelöst wurde, dorthin zurückleiten
+    # statt immer zur Server-Übersicht.
+    redirect_target = request.session.pop("post_login_redirect", None)
+    return RedirectResponse(redirect_target or "/servers")
 
 
 @app.get("/logout")
@@ -97,7 +123,15 @@ async def servers(request: Request):
         return RedirectResponse("/")
 
     access_token = request.session.get("access_token", "")
-    user_guilds = await discord_oauth.fetch_user_guilds(access_token)
+    try:
+        user_guilds = await discord_oauth.fetch_user_guilds(access_token)
+    except httpx.HTTPStatusError:
+        return templates.TemplateResponse(request, "guilds.html", {
+            "user": user,
+            "messages": [{"type": "error", "text": "Discord ist gerade überlastet — bitte in ein paar "
+                                                     "Sekunden nochmal versuchen."}],
+            "manageable_guilds": [], "invite_url": "",
+        })
     bot_guild_ids = await get_bot_guild_ids()
 
     manageable = []
@@ -123,26 +157,33 @@ async def servers(request: Request):
 
 
 async def _require_guild_access(request: Request, guild_id: int):
+    """Prüft Zugriff und gibt bei Erfolg (None, guild_dict) zurück, bei Ablehnung
+    (redirect_response, None). So muss der Aufrufer NICHT selbst nochmal bei
+    Discord nachfragen (der /users/@me/guilds-Endpunkt ist scharf rate-limitiert
+    -- ein doppelter Aufruf pro Seitenaufruf war ein echtes Risiko)."""
     user = _current_user(request)
     if not user:
-        return RedirectResponse("/")
+        return RedirectResponse("/"), None
 
     bot_guild_ids = await get_bot_guild_ids()
     if guild_id not in bot_guild_ids:
-        return RedirectResponse("/servers?error=bot_not_present")
+        return RedirectResponse("/servers?error=bot_not_present"), None
 
     access_token = request.session.get("access_token", "")
-    user_guilds = await discord_oauth.fetch_user_guilds(access_token)
+    try:
+        user_guilds = await discord_oauth.fetch_user_guilds(access_token)
+    except httpx.HTTPStatusError:
+        return RedirectResponse("/servers?error=rate_limited"), None
     match = next((g for g in user_guilds if int(g["id"]) == guild_id), None)
     if not match or not discord_oauth.can_manage_guild(match["permissions"]):
-        return RedirectResponse("/servers?error=no_access")
+        return RedirectResponse("/servers?error=no_access"), None
 
-    return None
+    return None, match
 
 
 @app.get("/dashboard/{guild_id}", response_class=HTMLResponse)
 async def guild_settings_page(request: Request, guild_id: int):
-    denied = await _require_guild_access(request, guild_id)
+    denied, guild = await _require_guild_access(request, guild_id)
     if denied:
         return denied
 
@@ -152,13 +193,9 @@ async def guild_settings_page(request: Request, guild_id: int):
 
     text_channels = await fetch_guild_text_channels(guild_id)
 
-    access_token = request.session.get("access_token", "")
-    user_guilds = await discord_oauth.fetch_user_guilds(access_token)
-    match = next((g for g in user_guilds if int(g["id"]) == guild_id), {"name": f"Server {guild_id}"})
-
     return templates.TemplateResponse(request, "settings.html", {
         "user": user, "messages": [],
-        "guild": {"id": guild_id, "name": match["name"]},
+        "guild": {"id": guild_id, "name": guild["name"]},
         "settings": settings,
         "text_channels": text_channels,
     })
@@ -172,7 +209,7 @@ async def save_guild_settings(
     punishment_log_channel_id: int = Form(0),
     announcement_channel_id: int = Form(0),
 ):
-    denied = await _require_guild_access(request, guild_id)
+    denied, _guild = await _require_guild_access(request, guild_id)
     if denied:
         return denied
 

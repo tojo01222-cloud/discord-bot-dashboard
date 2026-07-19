@@ -1,0 +1,47 @@
+{% extends "admin_base.html" %}
+{% block title %}Rechteverwaltung — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Rechteverwaltung</h1>
+
+<div class="admin-card">
+    <h2 style="font-size:16px; margin-bottom:12px;">Neuen Admin-Account anlegen</h2>
+    <form method="post" action="/admin/create-admin" class="admin-form">
+        <div>
+            <label for="new_username">Benutzername</label>
+            <input type="text" id="new_username" name="username" required>
+        </div>
+        <div>
+            <label for="new_password">Passwort</label>
+            <input type="password" id="new_password" name="password" required>
+        </div>
+        <button type="submit" class="btn btn-small">Account anlegen</button>
+    </form>
+</div>
+
+<div class="admin-card">
+    <h2 style="font-size:16px; margin-bottom:12px;">Bestehende Admins</h2>
+    {% for entry in admins_with_perms %}
+    <div style="padding:14px 0; border-bottom:1px solid #262a38;">
+        <strong>{{ entry.user.username }}</strong>
+        {% if entry.user.is_superadmin %}
+        <span class="perm-tag perm-tag-on">Superadmin (alle Rechte)</span>
+        {% else %}
+        <div style="margin-top:8px;">
+            {% for perm in all_permissions %}
+            <form method="post" action="/admin/permissions/{{ entry.user.id }}/toggle" style="display:inline;">
+                <input type="hidden" name="permission_key" value="{{ perm }}">
+                {% if perm in entry.permissions %}
+                <input type="hidden" name="action" value="revoke">
+                <button type="submit" class="perm-tag perm-tag-on" style="border:none; cursor:pointer;">{{ perm }} ✓</button>
+                {% else %}
+                <input type="hidden" name="action" value="grant">
+                <button type="submit" class="perm-tag perm-tag-off" style="border:none; cursor:pointer;">{{ perm }}</button>
+                {% endif %}
+            </form>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

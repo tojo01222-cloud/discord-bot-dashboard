@@ -46,6 +46,11 @@
     <button type="submit" class="btn">Speichern</button>
 </form>
 
+<div style="display:flex; gap:12px; margin-top:32px; flex-wrap:wrap;">
+    <a href="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="btn btn-small btn-ghost">📝 Bewerbungssystem einrichten</a>
+    <a href="/dashboard/{{ guild.id }}/bewerbungen" class="btn btn-small btn-ghost">📋 Bewerbungen ansehen</a>
+</div>
+
 <p class="hint">
     Weitere Einstellungen (Anti-Nuke-Whitelist, Team-Ränge, Ticket-Design, Musik, ...)
     kommen in den nächsten Ausbaustufen des Dashboards dazu.

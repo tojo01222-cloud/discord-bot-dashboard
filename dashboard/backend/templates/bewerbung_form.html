@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Bewerbung{% endblock %}
+{% block content %}
+<div class="login-box" style="max-width:560px;">
+    <h1>📝 {{ config.welcome_text }}</h1>
+
+    {% if closed %}
+    <p style="color:#8a90a2;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
+    {% elif already_applied %}
+    <div class="flash flash-success">Du hast bereits eine offene Bewerbung eingereicht — wir melden uns bei dir!</div>
+    {% else %}
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+        {% endfor %}
+
+        {% if not questions %}
+        <p style="color:#8a90a2;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
+        {% else %}
+        <form method="post" action="/bewerbung/{{ guild_id }}" class="settings-form" style="text-align:left;">
+            {% for q in questions %}
+            <div class="field">
+                <label for="question_{{ q.id }}">{{ q.question_text }}</label>
+                <textarea id="question_{{ q.id }}" name="question_{{ q.id }}" required rows="3"
+                          style="background:#14161f;border:1px solid #262a3a;color:#e8eaf2;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn">Bewerbung abschicken</button>
+        </form>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Bewerbungs-Einstellungen — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Bewerbungs-Einstellungen — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="settings-form">
+    <div class="field">
+        <label>
+            <input type="checkbox" name="enabled" value="on" {% if config.enabled %}checked{% endif %}>
+            Bewerbungsformular aktiv
+        </label>
+    </div>
+    <div class="field">
+        <label for="welcome_text">Begrüßungstext</label>
+        <input type="text" id="welcome_text" name="welcome_text" value="{{ config.welcome_text }}">
+    </div>
+    <button type="submit" class="btn">Speichern</button>
+</form>
+
+<h2 style="margin-top:40px; font-size:18px;">Fragen</h2>
+{% for q in questions %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262a3a;">
+    <span>{{ q.question_text }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% else %}
+<p style="color:#8a90a2;">Noch keine Fragen eingerichtet.</p>
+{% endfor %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen" class="settings-form" style="margin-top:20px;">
+    <div class="field">
+        <label for="question_text">Neue Frage</label>
+        <input type="text" id="question_text" name="question_text" placeholder="z.B. Warum möchtest du ins Team?" required>
+    </div>
+    <button type="submit" class="btn btn-small">Frage hinzufügen</button>
+</form>
+
+<p class="hint">
+    Bewerbungslink für diesen Server: <br>
+    <code>{{ request.url.scheme }}://{{ request.url.netloc }}/bewerbung/{{ guild.id }}</code>
+</p>
+{% endblock %}
