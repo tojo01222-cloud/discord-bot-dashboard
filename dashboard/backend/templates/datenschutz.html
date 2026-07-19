@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Datenschutzerklärung{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← Zurück</a>
+<h1>Datenschutzerklärung</h1>
+<p style="color:#8a90a2; font-size:13px;">
+    Dies ist ein technischer Entwurf, KEINE Rechtsberatung. Vor dem echten Betrieb
+    (insbesondere mit Nutzern aus der EU) sollte diese Seite von einer Anwältin/einem
+    Anwalt oder einem Datenschutzdienst geprüft/erstellt werden.
+</p>
+
+<h2>Welche Daten werden gespeichert?</h2>
+<ul>
+    <li>Deine Discord-User-ID, dein Discord-Benutzername und dein Avatar-Bild</li>
+    <li>Eine intern erzeugte, zufällige Nutzer-ID für unser System</li>
+    <li>Zeitpunkt deines ersten und letzten Logins</li>
+    <li>Die Server-Einstellungen, die du über dieses Dashboard änderst</li>
+</ul>
+
+<h2>Warum?</h2>
+<p>
+    Diese Daten werden benötigt, um dir nach dem Login die richtigen Server anzuzeigen
+    und deine Einstellungen zu speichern.
+</p>
+
+<h2>Wie lange?</h2>
+<p>
+    Bis du dein Konto löschen lässt (kontaktiere dazu den Server-Betreiber) oder die
+    Daten aus anderem Grund gelöscht werden.
+</p>
+
+<h2>Weitergabe an Dritte?</h2>
+<p>Nein, außer an Discord selbst im Rahmen des Login-Vorgangs (OAuth2).</p>
+{% endblock %}

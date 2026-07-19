@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bot Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a href="/" class="brand">🤖 Bot Dashboard</a>
+            {% if user %}
+            <div class="user-chip">
+                {% if user.avatar_hash %}
+                <img src="https://cdn.discordapp.com/avatars/{{ user.discord_id }}/{{ user.avatar_hash }}.png" alt="">
+                {% endif %}
+                <span>{{ user.username }}</span>
+                <a href="/logout" class="logout-link">Logout</a>
+            </div>
+            {% endif %}
+        </div>
+    </header>
+    <main class="content">
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

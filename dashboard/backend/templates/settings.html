@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/servers" class="back-link">← Zurück zur Serverliste</a>
+<h1>Einstellungen — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/settings" class="settings-form">
+    <div class="field">
+        <label for="language">Bot-Sprache</label>
+        <select name="language" id="language">
+            <option value="de" {% if settings.language == "de" %}selected{% endif %}>Deutsch</option>
+            <option value="en" {% if settings.language == "en" %}selected{% endif %}>English</option>
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="mod_log_channel_id">Moderations-Log-Kanal</label>
+        <select name="mod_log_channel_id" id="mod_log_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.mod_log_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="punishment_log_channel_id">Strafverzeichnis-Kanal</label>
+        <select name="punishment_log_channel_id" id="punishment_log_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.punishment_log_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="announcement_channel_id">Ankündigungs-Kanal</label>
+        <select name="announcement_channel_id" id="announcement_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.announcement_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <button type="submit" class="btn">Speichern</button>
+</form>
+
+<p class="hint">
+    Weitere Einstellungen (Anti-Nuke-Whitelist, Team-Ränge, Ticket-Design, Musik, ...)
+    kommen in den nächsten Ausbaustufen des Dashboards dazu.
+</p>
+{% endblock %}
