@@ -41,13 +41,13 @@ def _current_user(request: Request):
 async def index(request: Request):
     if _current_user(request):
         return RedirectResponse("/servers")
-    return templates.TemplateResponse("login.html", {"request": request, "user": None, "messages": []})
+    return templates.TemplateResponse(request, "login.html", {"user": None, "messages": []})
 
 
 @app.get("/datenschutz", response_class=HTMLResponse)
 async def datenschutz(request: Request):
-    return templates.TemplateResponse("datenschutz.html", {
-        "request": request, "user": _current_user(request), "messages": [],
+    return templates.TemplateResponse(request, "datenschutz.html", {
+        "user": _current_user(request), "messages": [],
     })
 
 
@@ -116,8 +116,8 @@ async def servers(request: Request):
         f"&permissions=8&scope=bot%20applications.commands"
     )
 
-    return templates.TemplateResponse("guilds.html", {
-        "request": request, "user": user, "messages": [],
+    return templates.TemplateResponse(request, "guilds.html", {
+        "user": user, "messages": [],
         "manageable_guilds": manageable, "invite_url": invite_url,
     })
 
@@ -156,8 +156,8 @@ async def guild_settings_page(request: Request, guild_id: int):
     user_guilds = await discord_oauth.fetch_user_guilds(access_token)
     match = next((g for g in user_guilds if int(g["id"]) == guild_id), {"name": f"Server {guild_id}"})
 
-    return templates.TemplateResponse("settings.html", {
-        "request": request, "user": user, "messages": [],
+    return templates.TemplateResponse(request, "settings.html", {
+        "user": user, "messages": [],
         "guild": {"id": guild_id, "name": match["name"]},
         "settings": settings,
         "text_channels": text_channels,
