@@ -34,6 +34,12 @@ class DashboardConfig:
     ADMIN_BOOTSTRAP_USERNAME: str = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "")
     ADMIN_BOOTSTRAP_PASSWORD: str = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "")
 
+    # Für Impressum/Kontakt: dein Discord-Username und ein Einladungslink zu
+    # deinem Support-Server. Bewusst über .env statt fest im Code -- so
+    # lässt es sich jederzeit ändern, ohne den Code anzufassen.
+    OPERATOR_DISCORD_USERNAME: str = os.getenv("OPERATOR_DISCORD_USERNAME", "")
+    OPERATOR_DISCORD_INVITE: str = os.getenv("OPERATOR_DISCORD_INVITE", "")
+
     @classmethod
     def validate(cls) -> None:
         missing = [name for name in

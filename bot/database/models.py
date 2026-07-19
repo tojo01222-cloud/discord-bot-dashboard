@@ -245,3 +245,82 @@ class ApplicationAnswer(Base):
     application_id: Mapped[int] = mapped_column(Integer, index=True)
     question_text: Mapped[str] = mapped_column(String(300))  # Kopie des Fragetexts zum Zeitpunkt der Bewerbung
     answer_text: Mapped[str] = mapped_column(Text)
+
+
+# ---------- Phase 9.5: Level-System, Invite-Tracking, Giveaway-System ----------
+
+class LevelXP(Base):
+    """XP/Level-Stand eines Users auf einem Server."""
+    __tablename__ = "level_xp"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    xp: Mapped[int] = mapped_column(Integer, default=0)
+    level: Mapped[int] = mapped_column(Integer, default=0)
+    last_xp_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class LevelRoleReward(Base):
+    """Ab welchem Level welche Rolle automatisch vergeben wird."""
+    __tablename__ = "level_role_rewards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    level: Mapped[int] = mapped_column(Integer)
+    role_id: Mapped[int] = mapped_column(BigInteger)
+
+
+class InviteRecord(Base):
+    """Bekannter Stand eines Einladungslinks (für den Uses-Vergleich bei
+    Beitritten -- Discord liefert keinen direkten 'welcher Link wurde benutzt'
+    Event, das muss über den Uses-Unterschied selbst ermittelt werden)."""
+    __tablename__ = "invite_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    code: Mapped[str] = mapped_column(String(20), unique=True)
+    inviter_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    uses: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class InviteJoin(Base):
+    """Wer über wessen Einladung beigetreten ist."""
+    __tablename__ = "invite_joins"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    member_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    inviter_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    joined_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    is_fake: Mapped[bool] = mapped_column(Boolean, default=False)  # Account war bei Beitritt <7 Tage alt
+
+
+class Giveaway(Base):
+    """Ein Gewinnspiel."""
+    __tablename__ = "giveaways"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    sponsor: Mapped[str] = mapped_column(String(100), default="")
+    invites_required: Mapped[int] = mapped_column(Integer, default=0)  # 0 = keine Mindest-Invites nötig
+    use_new_invites_only: Mapped[bool] = mapped_column(Boolean, default=True)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    started_by: Mapped[int] = mapped_column(BigInteger)
+    ends_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    ended: Mapped[bool] = mapped_column(Boolean, default=False)
+    winner_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class GiveawayEntry(Base):
+    """Eine Teilnahme an einem Gewinnspiel."""
+    __tablename__ = "giveaway_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    giveaway_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    entered_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)

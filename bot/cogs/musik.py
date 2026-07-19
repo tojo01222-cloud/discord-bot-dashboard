@@ -228,11 +228,23 @@ class Musik(commands.Cog):
         ))
         await asyncio.sleep(25)
         if player.radio_genre != genre:
+            # Radio-Modus wurde inzwischen komplett beendet (z.B. durch /stop
+            # oder einen anderen /radio-Aufruf) -- echter Fehlerfall.
             await ctx.send(embed=error_embed(
                 "Sender-Fehler" if lang == "de" else "Station error",
                 player.last_stream_error or (
                     "Der Sender konnte nicht abgespielt werden." if lang == "de"
                     else "The station could not be played."),
+            ))
+            return
+
+        if player._is_fallback:
+            await ctx.send(embed=error_embed(
+                "Sender nicht erreichbar" if lang == "de" else "Station unreachable",
+                (f"„{genre}“ war nach mehreren Versuchen nicht erreichbar — ich spiele stattdessen "
+                 f"FM4, damit trotzdem Musik läuft.") if lang == "de" else
+                (f"\"{genre}\" was unreachable after several attempts — playing FM4 instead so there's "
+                 f"still music."),
             ))
             return
 

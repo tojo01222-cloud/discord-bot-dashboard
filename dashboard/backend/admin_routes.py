@@ -279,4 +279,8 @@ async def admin_create_new(request: Request, username: str = Form(...), password
 
 @admin_router.get("/impressum", response_class=HTMLResponse)
 async def impressum(request: Request):
-    return templates.TemplateResponse(request, "impressum.html", {"user": None, "messages": []})
+    return templates.TemplateResponse(request, "impressum.html", {
+        "user": None, "messages": [],
+        "operator_username": cfg.OPERATOR_DISCORD_USERNAME,
+        "operator_invite": cfg.OPERATOR_DISCORD_INVITE,
+    })
