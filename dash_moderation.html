@@ -1,13 +1,45 @@
-{% extends "admin_base.html" %}
-{% block title %}System — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Vorschläge — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>System-Info</h1>
-<div class="admin-card">
-    <table class="admin-table">
-        <tr><th>Python-Version</th><td>{{ system_info.python_version }}</td></tr>
-        <tr><th>Plattform</th><td>{{ system_info.platform }}</td></tr>
-        <tr><th>Datenbank</th><td>{{ "Erreichbar" if system_info.database_ok else "Nicht erreichbar" }}</td></tr>
-        <tr><th>Wartungsmodus</th><td>{{ "Aktiv" if system_info.maintenance_mode else "Inaktiv" }}</td></tr>
-    </table>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Vorschläge — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/kanal" class="settings-form">
+    <div class="field">
+        <label>Vorschlags-Kanal</label>
+        <select name="channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-small">Speichern</button>
+</form>
+
+<h2 style="margin-top:32px;">Eingereichte Vorschläge</h2>
+{% for s in suggestions %}
+<div style="padding:14px 0; border-bottom:1px solid #262838;">
+    <div>
+        #{{ s.id }} —
+        {% if s.status == "pending" %}🟡 Offen{% elif s.status == "accepted" %}✅ Angenommen{% else %}❌ Abgelehnt{% endif %}
+        — von Discord-ID {{ s.user_id }}
+    </div>
+    <p style="margin:6px 0;">{{ s.content }}</p>
+    {% if s.status == "pending" %}
+    <div style="display:flex; gap:10px;">
+        <form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/{{ s.id }}/status">
+            <input type="hidden" name="status" value="accepted">
+            <button type="submit" class="btn btn-small btn-green">Annehmen</button>
+        </form>
+        <form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/{{ s.id }}/status">
+            <input type="hidden" name="status" value="rejected">
+            <button type="submit" class="btn btn-small btn-ghost">Ablehnen</button>
+        </form>
+    </div>
+    {% endif %}
 </div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Vorschläge.</p>
+{% endfor %}
 {% endblock %}

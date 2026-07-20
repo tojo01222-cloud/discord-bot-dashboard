@@ -1,37 +1,24 @@
-{% extends "admin_base.html" %}
-{% block title %}Server — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Leaderboard — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Server ({{ guilds|length }})</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Leaderboard — {{ guild.name }}</h1>
 
-<form method="get" action="/admin/servers" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
-    <input type="text" name="q" placeholder="Server suchen..." value="{{ q|default('') }}"
-           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
-    <select name="sort" style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;">
-        <option value="name" {% if sort|default('name') == "name" %}selected{% endif %}>Nach Name</option>
-        <option value="members" {% if sort|default('name') == "members" %}selected{% endif %}>Nach Mitgliederzahl</option>
-    </select>
-    <button type="submit" class="btn btn-small">Filtern</button>
-</form>
-
-<div class="admin-card">
+{% if not top %}
+<p style="color:#9297ab;">Noch keine XP-Daten.</p>
+{% else %}
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
     <table class="admin-table">
-        <tr><th>Name</th><th>Mitglieder</th><th>Server-ID</th><th>Aktionen</th></tr>
-        {% for g in guilds %}
+        <tr><th>#</th><th>User</th><th>Level</th><th>XP</th></tr>
+        {% for entry in top %}
         <tr>
-            <td>{{ g.name }}</td>
-            <td>{{ g.member_count }}</td>
-            <td>{{ g.guild_id }}</td>
-            <td>
-                <form method="post" action="/admin/servers/{{ g.guild_id }}/invite" style="display:inline;">
-                    <button type="submit" class="btn btn-small">Link erzeugen</button>
-                </form>
-                <form method="post" action="/admin/servers/{{ g.guild_id }}/leave" style="display:inline;"
-                      onsubmit="return confirm('Wirklich verlassen? Der Bot ist danach nicht mehr auf diesem Server.');">
-                    <button type="submit" class="btn btn-small btn-ghost">Verlassen</button>
-                </form>
-            </td>
+            <td>{{ loop.index }}</td>
+            <td>{{ entry.user_id }}</td>
+            <td>{{ entry.level }}</td>
+            <td>{{ entry.xp }}</td>
         </tr>
         {% endfor %}
     </table>
 </div>
+{% endif %}
 {% endblock %}

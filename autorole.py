@@ -1,166 +1,175 @@
 """
-Info- und Hilfe-Befehle. Dient als REFERENZ-Cog für alle weiteren Module:
-Jeder Command wird als `hybrid_command` gebaut -> funktioniert automatisch
-sowohl als /befehl (Slash) als auch als !befehl (Prefix), ohne doppelten Code.
+Anti-Werbung-System.
 
-/help überarbeitet: statt einer einzigen, bei über 100 Befehlen unübersichtlich
-gewordenen Liste aus reinen Befehlsnamen (ohne Beschreibung, dicht an das
-Discord-Embed-Zeichenlimit gequetscht) gibt es jetzt eine Übersicht mit
-Kategorien-Anzahl PLUS ein Auswahlmenü: pro Kategorie eine übersichtliche
-Liste mit Befehl UND Kurzbeschreibung.
+- /antiwerbung on|off              -- System ein-/ausschalten (SERVER_ADMIN)
+- /antiwerbung_add <user|rolle>    -- darf Links posten, von der Erkennung ausgenommen (SERVER_ADMIN)
+- /antiwerbung_liste                -- zeigt die Ausnahmeliste
+
+Postet ein nicht ausgenommener User einen Link (egal welchen), wird die
+Nachricht sofort gelöscht und eskalierend bestraft, pro User hochgezählt und
+dauerhaft gespeichert (siehe AntiWerbungStrike):
+  1. Verstoß -> 1 Stunde Timeout
+  2. Verstoß -> 1 Tag Timeout
+  3. Verstoß -> 7 Tage Timeout
+  4. Verstoß (und jeder weitere) -> Kick
+
+Server-Administratoren, der Server-Owner und explizit über /antiwerbung_add
+ausgenommene User/Rollen sind von der Erkennung ausgenommen (dürfen frei
+Links posten).
 """
+import datetime as dt
+import logging
+import re
+
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.embeds import base_embed
+from bot.utils.permissions import require_level, PermissionLevel
+from bot.utils.embeds import success_embed
 from bot.utils.i18n import t
-from bot.utils.db_helpers import get_guild_language
+from bot.utils.db_helpers import (
+    get_guild_language,
+    get_anti_werbung_enabled,
+    set_anti_werbung_enabled,
+    is_anti_exempt,
+    bump_anti_werbung_strike,
+    log_punishment,
+)
+from bot.database.db import get_session
+from bot.database.models import GuildSettings
+from bot.cogs.anti_hack import _add_exemption, _list_exemptions
 
-# Cog-Klassenname -> (Emoji, Anzeigename, Kategorie). Cogs ohne Eintrag hier
-# landen automatisch in einer "Sonstiges"-Kategorie -- diese Liste ist nur für
-# schönere Beschriftung/Gruppierung, kein Muss zum Funktionieren.
-COG_DISPLAY = {
-    "Moderation": ("🛡️", "Moderation", "Sicherheit & Moderation"),
-    "TeamManagement": ("👥", "Team", "Sicherheit & Moderation"),
-    "AntiNuke": ("💣", "Anti-Nuke", "Sicherheit & Moderation"),
-    "AntiSpam": ("🚫", "Anti-Spam", "Sicherheit & Moderation"),
-    "AntiHack": ("🕵️", "Anti-Hack", "Sicherheit & Moderation"),
-    "AntiWerbung": ("🔗", "Anti-Werbung", "Sicherheit & Moderation"),
-    "Strafregister": ("📁", "Strafregister", "Sicherheit & Moderation"),
-    "AutoRole": ("🤖", "Autorole", "Server-Einrichtung"),
-    "Language": ("🌐", "Sprache", "Server-Einrichtung"),
-    "Musik": ("🎵", "Musik", "Musik"),
-    "Tickets": ("🎫", "Tickets", "Tickets & Warteraum"),
-    "Warteraum": ("🙋", "Warteraum", "Tickets & Warteraum"),
-    "Level": ("📈", "Level", "Community"),
-    "Invites": ("📨", "Invites", "Community"),
-    "Giveaway": ("🎉", "Gewinnspiele", "Community"),
-    "Fun": ("🎈", "Fun", "Community"),
-    "InfoHelp": ("ℹ️", "Info", "Sonstiges"),
-}
-CATEGORY_ORDER = [
-    "Sicherheit & Moderation", "Server-Einrichtung", "Musik", "Tickets & Warteraum",
-    "Community", "Sonstiges",
-]
-CATEGORY_EMOJI = {
-    "Sicherheit & Moderation": "🛡️", "Server-Einrichtung": "⚙️", "Musik": "🎵",
-    "Tickets & Warteraum": "🎫", "Community": "🌟", "Sonstiges": "📦",
+log = logging.getLogger("bot.anti_werbung")
+
+_LINK_RE = re.compile(r"https?://\S+|www\.\S+|discord\.gg/\S+", re.IGNORECASE)
+
+# Eskalationsstufen: Verstoß-Nummer -> Timeout-Dauer. Alles ab der letzten
+# definierten Stufe + 1 (hier also ab dem 4. Verstoß) führt zum Kick.
+ESCALATION = {
+    1: dt.timedelta(hours=1),
+    2: dt.timedelta(days=1),
+    3: dt.timedelta(days=7),
 }
 
 
-def _collect_commands_by_category(bot: commands.Bot) -> dict[str, list[tuple[str, str]]]:
-    """Baut {kategorie: [(befehl, beschreibung), ...]} aus allen geladenen Cogs."""
-    by_category: dict[str, list[tuple[str, str]]] = {c: [] for c in CATEGORY_ORDER}
-
-    for cog_name, cog in sorted(bot.cogs.items()):
-        _, _, category = COG_DISPLAY.get(cog_name, ("📦", cog_name, "Sonstiges"))
-        by_category.setdefault(category, [])
-
-        for cmd in cog.get_commands():
-            if isinstance(cmd, commands.Group):
-                for sub in cmd.commands:
-                    desc = sub.description or "—"
-                    by_category[category].append((f"/{cmd.name} {sub.name}", desc))
-            else:
-                desc = cmd.description or "—"
-                by_category[category].append((f"/{cmd.name}", desc))
-
-    return {cat: cmds for cat, cmds in by_category.items() if cmds}
-
-
-def _build_category_embed(lang: str, category: str, entries: list[tuple[str, str]]) -> discord.Embed:
-    emoji = CATEGORY_EMOJI.get(category, "📦")
-    embed = base_embed(f"{emoji} {category}")
-    lines = [f"**`{name}`** — {desc}" for name, desc in entries]
-    # Embed-Beschreibungslimit (4096 Zeichen) im Blick behalten -- bei sehr
-    # befehlsreichen Kategorien lieber sauber abschneiden als einen Fehler zu riskieren.
-    description = "\n".join(lines)
-    if len(description) > 3900:
-        description = description[:3900] + ("\n… weitere Befehle nicht angezeigt." if lang == "de"
-                                              else "\n… more commands not shown.")
-    embed.description = description
-    embed.set_footer(text=f"{len(entries)} Befehle in dieser Kategorie" if lang == "de"
-                      else f"{len(entries)} commands in this category")
-    return embed
-
-
-class HelpCategorySelect(discord.ui.Select):
-    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
-        self.by_category = by_category
-        self.lang = lang
-        options = [
-            discord.SelectOption(label=cat, emoji=CATEGORY_EMOJI.get(cat, "📦"),
-                                  description=f"{len(cmds)} Befehle" if lang == "de" else f"{len(cmds)} commands")
-            for cat, cmds in by_category.items()
-        ]
-        placeholder = "Kategorie wählen..." if lang == "de" else "Choose a category..."
-        super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        category = self.values[0]
-        embed = _build_category_embed(self.lang, category, self.by_category[category])
-        await interaction.response.edit_message(embed=embed)
-
-
-class HelpView(discord.ui.View):
-    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
-        super().__init__(timeout=120)
-        self.add_item(HelpCategorySelect(by_category, lang))
-
-    async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True
-
-
-class InfoHelp(commands.Cog):
+class AntiWerbung(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", description="Zeigt alle verfügbaren Befehle, gruppiert nach Kategorie.")
-    async def help_command(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id) if ctx.guild else "de"
-        by_category = _collect_commands_by_category(self.bot)
-        total_commands = sum(len(cmds) for cmds in by_category.values())
+    async def _is_exempt(self, member: discord.Member) -> bool:
+        if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
+            return True
+        if await is_anti_exempt(member.guild.id, "antiwerbung", "user", member.id):
+            return True
+        for role in member.roles:
+            if await is_anti_exempt(member.guild.id, "antiwerbung", "role", role.id):
+                return True
+        return False
 
-        embed = base_embed(t("help.title", lang))
-        overview_lines = []
-        for cat in CATEGORY_ORDER:
-            if cat not in by_category:
-                continue
-            emoji = CATEGORY_EMOJI.get(cat, "📦")
-            count = len(by_category[cat])
-            plural = "Befehle" if lang == "de" else "commands"
-            overview_lines.append(f"{emoji} **{cat}** — {count} {plural}")
-        embed.description = (
-            ("Wähle unten eine Kategorie aus, um die Befehle mit Beschreibung zu sehen.\n\n"
-             if lang == "de" else
-             "Pick a category below to see its commands with descriptions.\n\n")
-            + "\n".join(overview_lines)
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild or not isinstance(message.author, discord.Member):
+            return
+        if not await get_anti_werbung_enabled(message.guild.id):
+            return
+        if not _LINK_RE.search(message.content or ""):
+            return
+        if await self._is_exempt(message.author):
+            return
+
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
+        await self._punish(message.guild, message.author, message.channel)
+
+    async def _punish(self, guild: discord.Guild, member: discord.Member,
+                       channel: discord.abc.Messageable) -> None:
+        lang = await get_guild_language(guild.id)
+        count = await bump_anti_werbung_strike(guild.id, member.id)
+
+        duration = ESCALATION.get(count)
+        if duration is not None:
+            consequence_key = f"antiwerbung.consequence_{count}"
+            action = "timeout"
+            try:
+                await member.timeout(duration, reason=f"Anti-Werbung: unautorisierter Link (Verstoß Nr. {count})")
+            except discord.Forbidden:
+                log.warning("Konnte %s in Guild %s nicht timeouten (fehlende Berechtigung).", member.id, guild.id)
+        else:
+            consequence_key = "antiwerbung.consequence_4"
+            action = "kick"
+            try:
+                await member.kick(reason=f"Anti-Werbung: unautorisierter Link (Verstoß Nr. {count})")
+            except discord.Forbidden:
+                log.warning("Konnte %s in Guild %s nicht kicken (fehlende Berechtigung).", member.id, guild.id)
+
+        consequence_text = t(consequence_key, lang)
+
+        try:
+            await member.send(t("antiwerbung.deleted_dm", lang, guild=guild.name, count=count,
+                                 consequence=consequence_text))
+        except discord.Forbidden:
+            pass
+
+        await log_punishment(
+            guild.id, member.id, self.bot.user.id, f"anti_werbung_{action}",
+            f"Automatisch: unautorisierter Link (Verstoß Nr. {count})",
         )
-        embed.set_footer(text=f"{total_commands} Befehle insgesamt" if lang == "de"
-                          else f"{total_commands} commands total")
 
-        view = HelpView(by_category, lang)
-        await ctx.send(embed=embed, view=view)
+        try:
+            await channel.send(t("antiwerbung.alert", lang, user=member.mention, count=count,
+                                  consequence=consequence_text))
+        except discord.Forbidden:
+            pass
 
-    @commands.hybrid_command(name="serverinfo", description="Zeigt Informationen über diesen Server.")
+        async with get_session() as session:
+            settings = await session.get(GuildSettings, guild.id)
+            log_channel_id = settings.mod_log_channel_id if settings else 0
+        if log_channel_id:
+            log_channel = guild.get_channel(log_channel_id)
+            if log_channel and log_channel.id != getattr(channel, "id", None):
+                try:
+                    await log_channel.send(t("antiwerbung.alert", lang, user=member.mention, count=count,
+                                              consequence=consequence_text))
+                except discord.Forbidden:
+                    pass
+
+    # ---------- Commands ----------
+    @commands.hybrid_group(name="antiwerbung", description="Anti-Werbung-System verwalten.")
     @commands.guild_only()
-    async def serverinfo(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        guild = ctx.guild
+    async def antiwerbung(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
-        embed = base_embed(t("serverinfo.title", lang))
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Name", value=guild.name, inline=True)
-        embed.add_field(name="Owner", value=str(guild.owner), inline=True)
-        embed.add_field(name="Mitglieder" if lang == "de" else "Members", value=str(guild.member_count), inline=True)
-        embed.add_field(name="Erstellt am" if lang == "de" else "Created at",
-                         value=discord.utils.format_dt(guild.created_at, style="D"), inline=True)
-        embed.add_field(name="Rollen" if lang == "de" else "Roles", value=str(len(guild.roles)), inline=True)
-        embed.add_field(name="Kanäle" if lang == "de" else "Channels", value=str(len(guild.channels)), inline=True)
-        await ctx.send(embed=embed)
+    @antiwerbung.command(name="on", description="Aktiviert das Anti-Werbung-System.")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def antiwerbung_on(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        await set_anti_werbung_enabled(ctx.guild.id, True)
+        await ctx.send(embed=success_embed(t("anti.enabled", lang, feature="Anti-Werbung")))
+
+    @antiwerbung.command(name="off", description="Deaktiviert das Anti-Werbung-System.")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def antiwerbung_off(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        await set_anti_werbung_enabled(ctx.guild.id, False)
+        await ctx.send(embed=success_embed(t("anti.disabled", lang, feature="Anti-Werbung")))
+
+    @commands.hybrid_command(name="antiwerbung_add", description="Erlaubt einem User oder einer Rolle, Links zu posten.")
+    @app_commands.describe(user="Optional: ein User", rolle="Optional: eine Rolle")
+    @commands.guild_only()
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def antiwerbung_add(self, ctx: commands.Context, user: discord.Member = None, rolle: discord.Role = None):
+        await _add_exemption(ctx, "antiwerbung", "Anti-Werbung", user, rolle)
+
+    @commands.hybrid_command(name="antiwerbung_liste", description="Zeigt die Anti-Werbung-Ausnahmeliste.")
+    @commands.guild_only()
+    async def antiwerbung_liste(self, ctx: commands.Context):
+        await _list_exemptions(ctx, "antiwerbung", "Anti-Werbung")
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(InfoHelp(bot))
+    await bot.add_cog(AntiWerbung(bot))

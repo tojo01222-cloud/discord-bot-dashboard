@@ -13,10 +13,12 @@
             <nav style="display:flex; align-items:center; gap:18px;">
                 <a href="/apply" class="logout-link" style="font-weight:700;">✨ {{ wt(site_lang, 'nav_apply') }}</a>
                 <a href="/news" class="logout-link">{{ wt(site_lang, 'nav_news') }}</a>
-                <a href="/set-site-language?lang={{ 'de' if site_lang == 'en' else 'en' }}&next={{ request.url.path }}"
-                   class="logout-link" title="{{ wt(site_lang, 'lang_switch_label') }}">
-                    {{ '🇩🇪 DE' if site_lang == 'en' else '🇬🇧 EN' }}
-                </a>
+                <select onchange="window.location.href=this.value" title="{{ wt(site_lang, 'lang_switch_label') }}"
+                        style="background:transparent; color:var(--text-dim); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:13px; cursor:pointer;">
+                    <option value="/set-site-language?lang=en&next={{ request.url.path }}" {% if site_lang == 'en' %}selected{% endif %}>🇬🇧 EN</option>
+                    <option value="/set-site-language?lang=de&next={{ request.url.path }}" {% if site_lang == 'de' %}selected{% endif %}>🇩🇪 DE</option>
+                    <option value="/set-site-language?lang=es&next={{ request.url.path }}" {% if site_lang == 'es' %}selected{% endif %}>🇪🇸 ES</option>
+                </select>
                 {% if user %}
                 <div class="user-chip">
                     {% if user.avatar_hash %}
@@ -42,7 +44,10 @@
         <br>
         {% endif %}
         <a href="/impressum" style="color:#9297ab;">Impressum</a> ·
-        <a href="/datenschutz" style="color:#9297ab;">Datenschutz</a>
+        <a href="/datenschutz" style="color:#9297ab;">Datenschutz</a> ·
+        <a href="/urheberrecht" style="color:#9297ab;">Urheberrecht</a>
+        <br>
+        <span style="color:#a29bc4;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}. Alle Rechte vorbehalten.</span>
     </footer>
 </body>
 </html>

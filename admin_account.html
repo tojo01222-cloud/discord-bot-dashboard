@@ -1,51 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Bot Dashboard{% endblock %}
+{% block title %}{{ feature_label }}-Ausnahmen — {{ guild.name }}{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>Dein Discord-Bot, komplett unter Kontrolle</h1>
-    <p>Moderation, Team-Verwaltung, Musik, Tickets, Bewerbungen und mehr — alles an einem Ort,
-       für jeden Server, auf dem du Admin bist.</p>
-    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
-        <a href="/login" class="btn btn-discord">🎮 Zum Server-Dashboard</a>
-        <a href="/admin/login" class="btn btn-ghost">🛡️ Zum Admin-Bereich</a>
-    </div>
-</div>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>{{ feature_label }}-Ausnahmen — {{ guild.name }}</h1>
+<p>User oder Rollen auf dieser Liste lösen die {{ feature_label }}-Erkennung nie aus (Server-Owner und Administratoren sind immer automatisch ausgenommen).</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">🛡️</div>
-        <h3>Moderation & Sicherheit</h3>
-        <p>Anti-Nuke, Anti-Spam, Anti-Hack, Anti-Werbung, Team-Ränge und ein vollständiges Strafregister — direkt einstellbar.</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎵</div>
-        <h3>Musik & Radio</h3>
-        <p>YouTube-Wiedergabe und echte Live-Radiosender, dauerhaft in deinem Sprachkanal.</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎫</div>
-        <h3>Tickets & Warteraum</h3>
-        <p>Professionelle Support-Panels mit mehreren Designs und automatischer Hilfe-Erkennung.</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📝</div>
-        <h3>Bewerbungssystem</h3>
-        <p>Eigene Bewerbungsformulare für dein Team — Bewerber:innen füllen sie direkt hier aus.</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📈</div>
-        <h3>Level & Community</h3>
-        <p>XP-System, Invite-Tracking und Gewinnspiele — Bewegung und Beteiligung auf deinem Server sichtbar machen.</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🌐</div>
-        <h3>Mehrsprachig & Autorole</h3>
-        <p>Deutsch oder Englisch pro Server, automatische Rollenvergabe für Mitglieder, Bots und Admins getrennt.</p>
-    </div>
+{% if not entries %}
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% else %}
+{% for e in entries %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>{{ "Rolle" if e.target_type == "role" else "User" }}-ID {{ e.target_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen/{{ e.target_type }}/{{ e.target_id }}/entfernen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
 </div>
+{% endfor %}
+{% endif %}
 
-<p class="small-print" style="text-align:center; margin-top:48px;">
-    <a href="/impressum">Impressum</a> ·
-    <a href="/datenschutz">Datenschutz</a>
-</p>
+<form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="target_type">Typ</label>
+        <select name="target_type" id="target_type">
+            <option value="user">User</option>
+            <option value="role">Rolle</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="target_id">Discord-ID (User oder Rolle)</label>
+        <input type="text" id="target_id" name="target_id" required placeholder="z.B. 123456789012345678">
+    </div>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
+</form>
 {% endblock %}

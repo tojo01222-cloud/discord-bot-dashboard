@@ -1,91 +1,148 @@
 """
-Sprach-System.
+Vorschlagssystem.
 
-- /language <de|en>              -- stellt die Sprache des Bots für diesen Server ein (SERVER_ADMIN)
-- /language_aktualisieren <de|en> -- setzt die Sprache UND synchronisiert die Slash-Commands sofort
-                                      neu für DIESEN Server, statt auf die normale (bis zu einer
-                                      Stunde dauernde) globale Synchronisierung zu warten (SERVER_ADMIN)
-
-Standard-Sprache eines neuen Servers ist Englisch (siehe Config.DEFAULT_LANGUAGE),
-danach über /language pro Server umstellbar. Betrifft alle Bot-generierten
-Nachrichten (Embeds, Fehlermeldungen, usw.), die über t()/lang-Verzweigungen
-laufen -- also praktisch den gesamten Bot.
-
-WICHTIGER HINWEIS zu Discords eigener Lokalisierung: Die Namen/Beschreibungen
-der Slash-Commands selbst (wie sie im "/"-Menü erscheinen) werden von Discord
-IMMER nach der individuellen Sprach-Einstellung JEDES EINZELNEN Users
-angezeigt, nicht nach einer Server-weiten Einstellung -- das ist eine
-Discord-Plattform-Grenze, die kein Bot umgehen kann. /language stellt daher
-gezielt die Sprache der Bot-ANTWORTEN (Embeds, Nachrichten) ein, was der
-Server tatsächlich zentral steuern kann.
+- /vorschlag kanal <kanal>          -- legt den Vorschlags-Kanal fest (SERVER_ADMIN)
+- /vorschlag erstellen <text>        -- reicht einen Vorschlag ein, postet ihn mit
+                                         👍/👎-Reaktionen zur Abstimmung
+- /vorschlag annehmen <id>            -- markiert einen Vorschlag als angenommen (TEAM)
+- /vorschlag ablehnen <id>            -- markiert einen Vorschlag als abgelehnt (TEAM)
+- /vorschlag liste [status]           -- zeigt Vorschläge, optional gefiltert
 """
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from bot.utils.permissions import require_level, PermissionLevel
-from bot.utils.embeds import success_embed, error_embed
-from bot.utils.i18n import t
-from bot.utils.db_helpers import get_guild_language, set_guild_language
+from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.db_helpers import (
+    get_guild_language,
+    get_suggestion_channel,
+    set_suggestion_channel,
+    create_suggestion,
+    set_suggestion_message_id,
+    update_suggestion_status,
+    get_suggestions,
+)
 
-LANGUAGE_CHOICES = [
-    app_commands.Choice(name="Deutsch", value="de"),
-    app_commands.Choice(name="English", value="en"),
+STATUS_CHOICES = [
+    app_commands.Choice(name="Offen", value="pending"),
+    app_commands.Choice(name="Angenommen", value="accepted"),
+    app_commands.Choice(name="Abgelehnt", value="rejected"),
 ]
-LANGUAGE_LABELS = {"de": "Deutsch", "en": "English"}
+STATUS_LABELS = {"pending": "🟡 Offen", "accepted": "✅ Angenommen", "rejected": "❌ Abgelehnt"}
 
 
-class Language(commands.Cog):
+class Suggestions(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="language", description="Stellt die Sprache des Bots für diesen Server ein (de/en).")
-    @app_commands.describe(sprache="de für Deutsch, en für Englisch")
-    @app_commands.choices(sprache=LANGUAGE_CHOICES)
+    @commands.hybrid_group(name="vorschlag", description="Vorschlagssystem verwalten.")
     @commands.guild_only()
+    async def vorschlag(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @vorschlag.command(name="kanal", description="Legt den Kanal für Vorschläge fest.")
+    @app_commands.describe(kanal="Der Zielkanal")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def language(self, ctx: commands.Context, sprache: str):
-        if sprache not in ("de", "en"):
-            current_lang = await get_guild_language(ctx.guild.id)
-            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de' oder 'en'." if current_lang == "de"
-                                              else "Invalid language -- use 'de' or 'en'."))
+    async def vorschlag_kanal(self, ctx: commands.Context, kanal: discord.TextChannel):
+        lang = await get_guild_language(ctx.guild.id)
+        await set_suggestion_channel(ctx.guild.id, kanal.id)
+        await ctx.send(embed=success_embed(
+            f"Vorschlags-Kanal auf {kanal.mention} gesetzt." if lang == "de"
+            else f"Suggestion channel set to {kanal.mention}."))
+
+    @vorschlag.command(name="erstellen", description="Reicht einen Vorschlag ein.")
+    @app_commands.describe(text="Dein Vorschlag")
+    @commands.guild_only()
+    async def vorschlag_erstellen(self, ctx: commands.Context, *, text: str):
+        lang = await get_guild_language(ctx.guild.id)
+        channel_id = await get_suggestion_channel(ctx.guild.id)
+        if not channel_id:
+            await ctx.send(embed=error_embed(
+                "Noch kein Vorschlags-Kanal eingerichtet." if lang == "de"
+                else "No suggestion channel configured yet."), ephemeral=True)
             return
 
-        await set_guild_language(ctx.guild.id, sprache)
-        await ctx.send(embed=success_embed(t("language.set", sprache, language=LANGUAGE_LABELS[sprache])))
-
-    @commands.hybrid_command(
-        name="language_aktualisieren",
-        description="Setzt die Sprache und synchronisiert die Slash-Commands sofort neu für diesen Server.",
-    )
-    @app_commands.describe(sprache="de für Deutsch, en für Englisch")
-    @app_commands.choices(sprache=LANGUAGE_CHOICES)
-    @commands.guild_only()
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def language_aktualisieren(self, ctx: commands.Context, sprache: str):
-        if sprache not in ("de", "en"):
-            current_lang = await get_guild_language(ctx.guild.id)
-            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de' oder 'en'." if current_lang == "de"
-                                              else "Invalid language -- use 'de' or 'en'."))
+        channel = ctx.guild.get_channel(channel_id)
+        if not channel:
+            await ctx.send(embed=error_embed(
+                "Der eingerichtete Kanal existiert nicht mehr." if lang == "de"
+                else "The configured channel no longer exists."), ephemeral=True)
             return
 
-        await ctx.defer()
-        await set_guild_language(ctx.guild.id, sprache)
+        suggestion = await create_suggestion(ctx.guild.id, ctx.author.id, text)
 
+        embed = base_embed(f"💡 Vorschlag #{suggestion.id}" if lang == "de" else f"💡 Suggestion #{suggestion.id}", text)
+        embed.set_footer(text=f"Von {ctx.author.display_name}")
         try:
-            synced = await self.bot.tree.sync(guild=ctx.guild)
-            sync_note = (f"\n{len(synced)} Befehle für diesen Server sofort synchronisiert." if sprache == "de"
-                         else f"\n{len(synced)} commands synced instantly for this server.")
-        except discord.HTTPException:
-            sync_note = ("\n⚠️ Sofort-Synchronisierung fehlgeschlagen -- die normale globale "
-                         "Synchronisierung greift trotzdem innerhalb der nächsten Stunde." if sprache == "de" else
-                         "\n⚠️ Instant sync failed -- the regular global sync will still apply "
-                         "within the next hour.")
+            message = await channel.send(embed=embed)
+            await message.add_reaction("👍")
+            await message.add_reaction("👎")
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                f"Ich kann in {channel.mention} nicht schreiben." if lang == "de"
+                else f"I can't send messages in {channel.mention}."), ephemeral=True)
+            return
 
-        embed = success_embed(t("language.refreshed", sprache))
-        embed.description = (embed.description or "") + sync_note
+        await set_suggestion_message_id(suggestion.id, message.id)
+        await ctx.send(embed=success_embed(
+            f"Vorschlag in {channel.mention} gepostet." if lang == "de"
+            else f"Suggestion posted in {channel.mention}."), ephemeral=True)
+
+    @vorschlag.command(name="annehmen", description="Markiert einen Vorschlag als angenommen.")
+    @app_commands.describe(vorschlag_id="Die ID des Vorschlags")
+    @commands.guild_only()
+    @require_level(PermissionLevel.TEAM)
+    async def vorschlag_annehmen(self, ctx: commands.Context, vorschlag_id: int):
+        await self._update_status(ctx, vorschlag_id, "accepted")
+
+    @vorschlag.command(name="ablehnen", description="Markiert einen Vorschlag als abgelehnt.")
+    @app_commands.describe(vorschlag_id="Die ID des Vorschlags")
+    @commands.guild_only()
+    @require_level(PermissionLevel.TEAM)
+    async def vorschlag_ablehnen(self, ctx: commands.Context, vorschlag_id: int):
+        await self._update_status(ctx, vorschlag_id, "rejected")
+
+    async def _update_status(self, ctx: commands.Context, suggestion_id: int, status: str) -> None:
+        lang = await get_guild_language(ctx.guild.id)
+        suggestion = await update_suggestion_status(suggestion_id, status)
+        if suggestion is None:
+            await ctx.send(embed=error_embed("Vorschlag nicht gefunden." if lang == "de" else "Suggestion not found."))
+            return
+
+        await ctx.send(embed=success_embed(
+            f"Vorschlag #{suggestion_id} als {STATUS_LABELS[status]} markiert." if lang == "de"
+            else f"Suggestion #{suggestion_id} marked as {STATUS_LABELS[status]}."))
+
+        if suggestion.message_id:
+            channel_id = await get_suggestion_channel(ctx.guild.id)
+            channel = ctx.guild.get_channel(channel_id) if channel_id else None
+            if channel:
+                try:
+                    message = await channel.fetch_message(suggestion.message_id)
+                    if message.embeds:
+                        embed = message.embeds[0]
+                        embed.add_field(name="Status", value=STATUS_LABELS[status], inline=False)
+                        await message.edit(embed=embed)
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+
+    @vorschlag.command(name="liste", description="Zeigt eingereichte Vorschläge.")
+    @app_commands.describe(status="Optional: nur einen bestimmten Status anzeigen")
+    @app_commands.choices(status=STATUS_CHOICES)
+    async def vorschlag_liste(self, ctx: commands.Context, status: str = None):
+        lang = await get_guild_language(ctx.guild.id)
+        suggestions = await get_suggestions(ctx.guild.id, status)
+        if not suggestions:
+            await ctx.send(embed=error_embed("Keine Vorschläge gefunden." if lang == "de" else "No suggestions found."))
+            return
+
+        embed = base_embed("💡 Vorschläge" if lang == "de" else "💡 Suggestions")
+        lines = [f"#{s.id} — {STATUS_LABELS[s.status]} — {s.content[:60]}" for s in suggestions[:20]]
+        embed.description = "\n".join(lines)
         await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Language(bot))
+    await bot.add_cog(Suggestions(bot))

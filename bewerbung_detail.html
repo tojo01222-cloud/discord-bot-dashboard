@@ -1,17 +1,32 @@
 {% extends "admin_base.html" %}
-{% block title %}Ankündigungen — Admin-Panel{% endblock %}
+{% block title %}Berechtigungsgruppen — Admin-Panel{% endblock %}
 {% block content %}
-<h1>Globale Ankündigung</h1>
-<p style="color:#9297ab; font-size:14px;">
-    Wird an den eingerichteten Ankündigungs-Kanal auf allen {{ guild_count }} Servern gesendet
-    (nur Server, wo im Server-Dashboard ein Ankündigungs-Kanal ausgewählt wurde).
-</p>
+<h1>Berechtigungsgruppen</h1>
 
-<form method="post" action="/admin/broadcast" class="admin-form">
-    <div>
-        <label for="message">Nachricht</label>
-        <textarea id="message" name="message" required placeholder="Deine Ankündigung..."></textarea>
+<div class="admin-card">
+    <h2 style="font-size:16px; margin-bottom:12px;">Neue Gruppe anlegen</h2>
+    <form method="post" action="/admin/groups" class="admin-form">
+        <div>
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required placeholder="z.B. Support-Team">
+        </div>
+        <button type="submit" class="btn btn-small">Anlegen</button>
+    </form>
+</div>
+
+{% if not groups_with_perms %}
+<p style="color:#9297ab;">Noch keine Gruppen angelegt.</p>
+{% else %}
+{% for entry in groups_with_perms %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <strong>{{ entry.group.name }}</strong>
+            <span style="color:#9297ab; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
+        </div>
+        <a href="/admin/groups/{{ entry.group.id }}" class="btn btn-small btn-ghost">Verwalten</a>
     </div>
-    <button type="submit" class="btn">An alle Server senden</button>
-</form>
+</div>
+{% endfor %}
+{% endif %}
 {% endblock %}

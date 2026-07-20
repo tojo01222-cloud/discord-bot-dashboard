@@ -20,6 +20,8 @@ from bot.database.models import (
     PermissionGroup, PermissionGroupEntry, AdminUserGroup, ApplicationNotifyChannel,
     AntiExemption, AntiWerbungStrike, RegisterAccessRole,
     NewsPost, StaffNote,
+    AdConfig, Partner, ReactionRole, SuggestionConfig, Suggestion,
+    BirthdayConfig, Birthday, EconomyBalance, ShopItem,
 )
 
 
@@ -624,6 +626,7 @@ async def get_ticket_category_by_name(guild_id: int, name: str) -> TicketCategor
 async def create_ticket_category(
     guild_id: int, name: str, emoji: str = "🎫", description: str = "",
     color_hex: str = "", channel_category_id: int = 0,
+    max_concurrent: int = 0, ping_role_id: int = 0,
 ) -> TicketCategory:
     async with get_session() as session:
         existing = await session.execute(
@@ -633,6 +636,7 @@ async def create_ticket_category(
         category = TicketCategory(
             guild_id=guild_id, name=name, emoji=emoji or "🎫", description=description,
             color_hex=color_hex, channel_category_id=channel_category_id, position=next_position,
+            max_concurrent=max_concurrent, ping_role_id=ping_role_id,
         )
         session.add(category)
         await session.commit()
@@ -643,6 +647,7 @@ async def create_ticket_category(
 async def update_ticket_category(
     category_id: int, *, emoji: str | None = None, description: str | None = None,
     color_hex: str | None = None, channel_category_id: int | None = None,
+    max_concurrent: int | None = None, ping_role_id: int | None = None,
 ) -> TicketCategory | None:
     async with get_session() as session:
         category = await session.get(TicketCategory, category_id)
@@ -656,9 +661,22 @@ async def update_ticket_category(
             category.color_hex = color_hex
         if channel_category_id is not None:
             category.channel_category_id = channel_category_id
+        if max_concurrent is not None:
+            category.max_concurrent = max_concurrent
+        if ping_role_id is not None:
+            category.ping_role_id = ping_role_id
         await session.commit()
         await session.refresh(category)
         return category
+
+
+async def count_open_tickets_by_category(category_id: int) -> int:
+    """Wie viele Tickets dieser Art gerade offen sind -- fürs Auslastungs-Panel
+    und die Kapazitätsprüfung beim Erstellen."""
+    async with get_session() as session:
+        stmt = select(Ticket).where(Ticket.category_id == category_id, Ticket.status == "open")
+        result = await session.execute(stmt)
+        return len(result.scalars().all())
 
 
 async def delete_ticket_category(category_id: int) -> bool:
@@ -720,6 +738,7 @@ async def get_guild_settings_snapshot(guild_id: int) -> dict:
             "language": settings.language,
             "waiting_room_voice_channel_id": settings.waiting_room_voice_channel_id,
             "waiting_room_notify_channel_id": settings.waiting_room_notify_channel_id,
+            "waiting_room_message": settings.waiting_room_message,
             "ticket_category_id": settings.ticket_category_id,
             "mod_log_channel_id": settings.mod_log_channel_id,
             "autorole_id": settings.autorole_id,
@@ -1544,5 +1563,300 @@ async def delete_staff_note(note_id: int) -> bool:
         if entry is None:
             return False
         await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Werbung/Partner-System ----------
+
+async def get_ad_channel(guild_id: int) -> int:
+    async with get_session() as session:
+        cfg = await session.get(AdConfig, guild_id)
+        return cfg.channel_id if cfg else 0
+
+
+async def set_ad_channel(guild_id: int, channel_id: int) -> None:
+    async with get_session() as session:
+        cfg = await session.get(AdConfig, guild_id)
+        if cfg is None:
+            cfg = AdConfig(guild_id=guild_id, channel_id=channel_id)
+            session.add(cfg)
+        else:
+            cfg.channel_id = channel_id
+        await session.commit()
+
+
+async def add_partner(guild_id: int, name: str, invite_link: str, added_by: int) -> Partner:
+    async with get_session() as session:
+        partner = Partner(guild_id=guild_id, name=name, invite_link=invite_link, added_by=added_by)
+        session.add(partner)
+        await session.commit()
+        await session.refresh(partner)
+        return partner
+
+
+async def get_partners(guild_id: int) -> list[Partner]:
+    async with get_session() as session:
+        stmt = select(Partner).where(Partner.guild_id == guild_id).order_by(Partner.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def remove_partner(partner_id: int) -> bool:
+    async with get_session() as session:
+        partner = await session.get(Partner, partner_id)
+        if partner is None:
+            return False
+        await session.delete(partner)
+        await session.commit()
+        return True
+
+
+# ---------- Reaction-Roles ----------
+
+async def add_reaction_role(guild_id: int, message_id: int, channel_id: int, emoji: str, role_id: int) -> ReactionRole:
+    async with get_session() as session:
+        entry = ReactionRole(guild_id=guild_id, message_id=message_id, channel_id=channel_id,
+                              emoji=emoji, role_id=role_id)
+        session.add(entry)
+        await session.commit()
+        await session.refresh(entry)
+        return entry
+
+
+async def get_reaction_roles_for_message(message_id: int) -> list[ReactionRole]:
+    async with get_session() as session:
+        stmt = select(ReactionRole).where(ReactionRole.message_id == message_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_reaction_roles(guild_id: int) -> list[ReactionRole]:
+    async with get_session() as session:
+        stmt = select(ReactionRole).where(ReactionRole.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def remove_reaction_role(entry_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(ReactionRole, entry_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Vorschlagssystem ----------
+
+async def get_suggestion_channel(guild_id: int) -> int:
+    async with get_session() as session:
+        cfg = await session.get(SuggestionConfig, guild_id)
+        return cfg.channel_id if cfg else 0
+
+
+async def set_suggestion_channel(guild_id: int, channel_id: int) -> None:
+    async with get_session() as session:
+        cfg = await session.get(SuggestionConfig, guild_id)
+        if cfg is None:
+            cfg = SuggestionConfig(guild_id=guild_id, channel_id=channel_id)
+            session.add(cfg)
+        else:
+            cfg.channel_id = channel_id
+        await session.commit()
+
+
+async def create_suggestion(guild_id: int, user_id: int, content: str) -> Suggestion:
+    async with get_session() as session:
+        suggestion = Suggestion(guild_id=guild_id, user_id=user_id, content=content)
+        session.add(suggestion)
+        await session.commit()
+        await session.refresh(suggestion)
+        return suggestion
+
+
+async def set_suggestion_message_id(suggestion_id: int, message_id: int) -> None:
+    async with get_session() as session:
+        suggestion = await session.get(Suggestion, suggestion_id)
+        if suggestion:
+            suggestion.message_id = message_id
+            await session.commit()
+
+
+async def update_suggestion_status(suggestion_id: int, status: str) -> Suggestion | None:
+    async with get_session() as session:
+        suggestion = await session.get(Suggestion, suggestion_id)
+        if suggestion is None:
+            return None
+        suggestion.status = status
+        await session.commit()
+        await session.refresh(suggestion)
+        return suggestion
+
+
+async def get_suggestions(guild_id: int, status: str | None = None) -> list[Suggestion]:
+    async with get_session() as session:
+        stmt = select(Suggestion).where(Suggestion.guild_id == guild_id)
+        if status:
+            stmt = stmt.where(Suggestion.status == status)
+        stmt = stmt.order_by(Suggestion.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Geburtstags-System ----------
+
+async def get_birthday_channel(guild_id: int) -> int:
+    async with get_session() as session:
+        cfg = await session.get(BirthdayConfig, guild_id)
+        return cfg.channel_id if cfg else 0
+
+
+async def set_birthday_channel(guild_id: int, channel_id: int) -> None:
+    async with get_session() as session:
+        cfg = await session.get(BirthdayConfig, guild_id)
+        if cfg is None:
+            cfg = BirthdayConfig(guild_id=guild_id, channel_id=channel_id)
+            session.add(cfg)
+        else:
+            cfg.channel_id = channel_id
+        await session.commit()
+
+
+async def set_waiting_room_message(guild_id: int, message: str) -> None:
+    async with get_session() as session:
+        settings = await get_or_create_guild_settings(session, guild_id)
+        settings.waiting_room_message = message
+        await session.commit()
+    _settings_snapshot_cache.pop(guild_id, None)
+
+
+async def set_birthday(guild_id: int, user_id: int, day: int, month: int) -> None:
+    async with get_session() as session:
+        stmt = select(Birthday).where(Birthday.guild_id == guild_id, Birthday.user_id == user_id)
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = Birthday(guild_id=guild_id, user_id=user_id, day=day, month=month)
+            session.add(entry)
+        else:
+            entry.day = day
+            entry.month = month
+        await session.commit()
+
+
+async def get_birthdays_for_guild(guild_id: int) -> list[Birthday]:
+    async with get_session() as session:
+        stmt = select(Birthday).where(Birthday.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_todays_birthdays(day: int, month: int, year: int) -> list[Birthday]:
+    """Alle Geburtstage heute, die dieses Jahr noch nicht gefeiert wurden."""
+    async with get_session() as session:
+        stmt = select(Birthday).where(
+            Birthday.day == day, Birthday.month == month, Birthday.last_announced_year != year,
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def mark_birthday_announced(birthday_id: int, year: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(Birthday, birthday_id)
+        if entry:
+            entry.last_announced_year = year
+            await session.commit()
+
+
+# ---------- Economy-System ----------
+
+async def get_balance(guild_id: int, user_id: int) -> EconomyBalance:
+    async with get_session() as session:
+        stmt = select(EconomyBalance).where(
+            EconomyBalance.guild_id == guild_id, EconomyBalance.user_id == user_id,
+        )
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = EconomyBalance(guild_id=guild_id, user_id=user_id, balance=0)
+            session.add(entry)
+            await session.commit()
+            await session.refresh(entry)
+        return entry
+
+
+async def add_balance(guild_id: int, user_id: int, amount: int) -> int:
+    """Ändert den Kontostand um amount (auch negativ für Abzug). Gibt den neuen
+    Kontostand zurück. Verhindert, dass der Kontostand unter 0 fällt."""
+    async with get_session() as session:
+        stmt = select(EconomyBalance).where(
+            EconomyBalance.guild_id == guild_id, EconomyBalance.user_id == user_id,
+        )
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = EconomyBalance(guild_id=guild_id, user_id=user_id, balance=0)
+            session.add(entry)
+        entry.balance = max(0, entry.balance + amount)
+        await session.commit()
+        return entry.balance
+
+
+async def claim_daily(guild_id: int, user_id: int, amount: int, cooldown_hours: int = 24) -> int | None:
+    """Gibt den neuen Kontostand zurück, oder None, wenn der Cooldown noch aktiv ist."""
+    async with get_session() as session:
+        stmt = select(EconomyBalance).where(
+            EconomyBalance.guild_id == guild_id, EconomyBalance.user_id == user_id,
+        )
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        now = dt.datetime.utcnow()
+        if entry is None:
+            entry = EconomyBalance(guild_id=guild_id, user_id=user_id, balance=0)
+            session.add(entry)
+        elif entry.last_daily_claim and (now - entry.last_daily_claim).total_seconds() < cooldown_hours * 3600:
+            return None
+
+        entry.balance += amount
+        entry.last_daily_claim = now
+        await session.commit()
+        return entry.balance
+
+
+async def get_economy_leaderboard(guild_id: int, limit: int = 10) -> list[EconomyBalance]:
+    async with get_session() as session:
+        stmt = select(EconomyBalance).where(EconomyBalance.guild_id == guild_id).order_by(
+            EconomyBalance.balance.desc()
+        ).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def add_shop_item(guild_id: int, name: str, price: int, role_id: int = 0) -> ShopItem:
+    async with get_session() as session:
+        item = ShopItem(guild_id=guild_id, name=name, price=price, role_id=role_id)
+        session.add(item)
+        await session.commit()
+        await session.refresh(item)
+        return item
+
+
+async def get_shop_items(guild_id: int) -> list[ShopItem]:
+    async with get_session() as session:
+        stmt = select(ShopItem).where(ShopItem.guild_id == guild_id).order_by(ShopItem.price.asc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_shop_item(item_id: int) -> ShopItem | None:
+    async with get_session() as session:
+        return await session.get(ShopItem, item_id)
+
+
+async def remove_shop_item(item_id: int) -> bool:
+    async with get_session() as session:
+        item = await session.get(ShopItem, item_id)
+        if item is None:
+            return False
+        await session.delete(item)
         await session.commit()
         return True

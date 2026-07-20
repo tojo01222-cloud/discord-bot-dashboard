@@ -31,6 +31,9 @@ class GuildSettings(Base):
     ticket_category_id: Mapped[int] = mapped_column(BigInteger, default=0)
     waiting_room_voice_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
     waiting_room_notify_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    # Anpassbarer Text für die Warteraum-Meldung, {user} und {channel} werden
+    # ersetzt. "" = Standardtext (siehe bot/utils/i18n.py "warteraum.notify").
+    waiting_room_message: Mapped[str] = mapped_column(String(300), default="")
     music_bound_voice_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
 
     # Zuletzt aktiver Radiosender (Genre-Schlüssel aus RADIO_STREAMS, "" = keiner).
@@ -194,6 +197,13 @@ class TicketCategory(Base):
     channel_category_id: Mapped[int] = mapped_column(BigInteger, default=0)
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    # Wie viele GLEICHZEITIG OFFENE Tickets dieser Art es maximal geben darf
+    # (0 = unbegrenzt) -- fürs Panel wird daraus live "Verfügbar X/Y" angezeigt,
+    # analog zum GalaxyBot-Vorbild.
+    max_concurrent: Mapped[int] = mapped_column(Integer, default=0)
+    # Rolle, die beim Öffnen eines Tickets dieser Art automatisch erwähnt wird
+    # (0 = keine Erwähnung).
+    ping_role_id: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class AdminUser(Base):
@@ -484,3 +494,110 @@ class StaffNote(Base):
     note: Mapped[str] = mapped_column(Text)
     created_by: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+# ---------- Werbung/Partner-System ----------
+
+class AdConfig(Base):
+    """In welchem Kanal /werbung erstellen postet."""
+    __tablename__ = "ad_configs"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class Partner(Base):
+    """Ein Partner-Server (nur Metadaten, kein automatisches Cross-Posting in
+    den fremden Server -- der Bot müsste dafür auch dort sein und Rechte haben,
+    das wird bewusst nicht vorausgesetzt)."""
+    __tablename__ = "partners"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    invite_link: Mapped[str] = mapped_column(String(200))
+    added_by: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+# ---------- Reaction-Roles ----------
+
+class ReactionRole(Base):
+    """Verknüpfung: auf welcher Nachricht welches Emoji welche Rolle vergibt."""
+    __tablename__ = "reaction_roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    message_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    emoji: Mapped[str] = mapped_column(String(100))
+    role_id: Mapped[int] = mapped_column(BigInteger)
+
+
+# ---------- Vorschlagssystem ----------
+
+class SuggestionConfig(Base):
+    """In welchem Kanal Vorschläge gepostet werden."""
+    __tablename__ = "suggestion_configs"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    content: Mapped[str] = mapped_column(Text)
+    message_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, accepted, rejected
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+# ---------- Geburtstags-System ----------
+
+class BirthdayConfig(Base):
+    """In welchem Kanal der Bot gratuliert."""
+    __tablename__ = "birthday_configs"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class Birthday(Base):
+    __tablename__ = "birthdays"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    day: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    # Verhindert doppelte Gratulation, falls der Bot am selben Tag mehrfach
+    # neu startet -- nur einmal pro Jahr gratulieren.
+    last_announced_year: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ---------- Economy-System ----------
+
+class EconomyBalance(Base):
+    __tablename__ = "economy_balances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    last_daily_claim: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ShopItem(Base):
+    """Ein kaufbares Item, optional mit automatischer Rollenvergabe beim Kauf
+    (role_id = 0 -> rein symbolisches Item ohne Rollenvergabe)."""
+    __tablename__ = "shop_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    price: Mapped[int] = mapped_column(Integer)
+    role_id: Mapped[int] = mapped_column(BigInteger, default=0)

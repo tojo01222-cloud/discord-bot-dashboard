@@ -12,6 +12,7 @@
         <select name="language" id="language">
             <option value="de" {% if settings.language == "de" %}selected{% endif %}>Deutsch</option>
             <option value="en" {% if settings.language == "en" %}selected{% endif %}>English</option>
+            <option value="es" {% if settings.language == "es" %}selected{% endif %}>Español</option>
         </select>
     </div>
     <div class="field">
@@ -128,6 +129,16 @@
     <button type="submit" class="btn">💾 Speichern</button>
 </form>
 
+<h2 style="margin-top:32px;">🙋 Warteraum — eigene Meldungs-Nachricht</h2>
+<p style="font-size:13px;">Leer lassen für den Standardtext. Platzhalter: <code>{user}</code>, <code>{channel}</code>.</p>
+<form method="post" action="/dashboard/{{ guild.id }}/warteraum-nachricht" class="settings-form">
+    <div class="field">
+        <input type="text" name="message" placeholder="z.B. {user} braucht Hilfe im Warteraum {channel}!"
+               value="{{ settings.waiting_room_message }}">
+    </div>
+    <button type="submit" class="btn btn-small">Speichern</button>
+</form>
+
 <h2 style="margin-top:40px;">Weitere Bereiche</h2>
 <div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;">
     <a href="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="btn btn-small btn-pink">📝 Bewerbungssystem</a>
@@ -143,5 +154,12 @@
     <a href="/dashboard/{{ guild.id }}/moderation" class="btn btn-small btn-ghost">🔨 Moderation</a>
     <a href="/dashboard/{{ guild.id }}/ankuendigung" class="btn btn-small btn-ghost">📢 Ankündigung senden</a>
     <a href="/dashboard/{{ guild.id }}/tickets" class="btn btn-small btn-ghost">🎫 Tickets</a>
+    <a href="/dashboard/{{ guild.id }}/tickets/kategorien" class="btn btn-small btn-pink">🗂️ Ticket-Arten</a>
+    <a href="/dashboard/{{ guild.id }}/tickets/panel-senden" class="btn btn-small btn-pink">📨 Panel senden</a>
+    <a href="/dashboard/{{ guild.id }}/werbung" class="btn btn-small btn-pink">📢 Werbung & Partner</a>
+    <a href="/dashboard/{{ guild.id }}/reactionroles" class="btn btn-small btn-ghost">🎭 Reaction-Roles</a>
+    <a href="/dashboard/{{ guild.id }}/vorschlaege" class="btn btn-small btn-ghost">💡 Vorschläge</a>
+    <a href="/dashboard/{{ guild.id }}/geburtstage" class="btn btn-small btn-ghost">🎂 Geburtstage</a>
+    <a href="/dashboard/{{ guild.id }}/economy" class="btn btn-small btn-green">💰 Economy</a>
 </div>
 {% endblock %}

@@ -6,6 +6,7 @@ mischt. Damit müssen operator_username/operator_invite (für den
 einzelnen Route manuell mitgegeben werden.
 """
 from starlette.requests import Request
+import datetime as dt
 
 from dashboard.backend.config import dashboard_config as cfg
 from dashboard.backend.web_i18n import wt
@@ -17,4 +18,5 @@ def global_template_context(request: Request) -> dict:
         "operator_invite": cfg.OPERATOR_DISCORD_INVITE,
         "site_lang": request.session.get("site_lang", "en"),
         "wt": wt,
+        "current_year": dt.datetime.utcnow().year,
     }

@@ -74,7 +74,7 @@ async def index(request: Request):
 
 @app.get("/set-site-language")
 async def set_site_language(request: Request, lang: str = "en", next: str = "/"):
-    if lang not in ("en", "de"):
+    if lang not in ("en", "de", "es"):
         lang = "en"
     request.session["site_lang"] = lang
     return RedirectResponse(next)
@@ -91,6 +91,13 @@ async def news_page(request: Request):
 @app.get("/apply", response_class=HTMLResponse)
 async def apply_page(request: Request):
     return templates.TemplateResponse(request, "apply.html", {
+        "user": _current_user(request), "messages": [],
+    })
+
+
+@app.get("/urheberrecht", response_class=HTMLResponse)
+async def urheberrecht_page(request: Request):
+    return templates.TemplateResponse(request, "urheberrecht.html", {
         "user": _current_user(request), "messages": [],
     })
 

@@ -1,23 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Ankündigung — {{ guild.name }}{% endblock %}
+{% block title %}Geburtstage — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Ankündigung — {{ guild.name }}</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Geburtstage — {{ guild.name }}</h1>
 
-<form method="post" action="/dashboard/{{ guild.id }}/ankuendigung" class="settings-form">
+<form method="post" action="/dashboard/{{ guild.id }}/geburtstage/kanal" class="settings-form">
     <div class="field">
-        <label for="channel_id">Kanal</label>
-        <select name="channel_id" id="channel_id">
+        <label>Gratulations-Kanal</label>
+        <select name="channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
             {% for ch in channels %}
-            <option value="{{ ch.id }}">#{{ ch.name }}</option>
+            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="field">
-        <label for="message">Nachricht</label>
-        <textarea id="message" name="message" required rows="4"
-                  style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:8px;font-family:inherit;"></textarea>
-    </div>
-    <button type="submit" class="btn">Senden</button>
+    <button type="submit" class="btn btn-small">Speichern</button>
 </form>
+
+<h2 style="margin-top:32px;">Hinterlegte Geburtstage ({{ birthdays|length }})</h2>
+<p style="font-size:13px;">User hinterlegen ihren eigenen Geburtstag über <code>/geburtstag setzen</code> in Discord.</p>
+{% for b in birthdays %}
+<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ b.day }}.{{ b.month }} — Discord-ID {{ b.user_id }}</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Geburtstage hinterlegt.</p>
+{% endfor %}
 {% endblock %}

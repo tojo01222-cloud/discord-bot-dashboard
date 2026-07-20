@@ -1,50 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Bot Dashboard{% endblock %}
+{% block title %}Reaction-Roles — {{ guild.name }}{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'landing_title') }}</h1>
-    <p>{{ wt(site_lang, 'landing_subtitle') }}</p>
-    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
-        <a href="/login" class="btn btn-discord">🎮 {{ wt(site_lang, 'landing_btn_dashboard') }}</a>
-        <a href="/admin/login" class="btn btn-ghost">🛡️ {{ wt(site_lang, 'landing_btn_admin') }}</a>
-    </div>
-</div>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Reaction-Roles — {{ guild.name }}</h1>
+<p style="font-size:13px;">Neue Reaction-Roles werden über <code>/reactionrole add</code> in Discord eingerichtet (dafür wird die Ziel-Nachricht gebraucht) — hier kannst du bestehende einsehen und entfernen.</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">🛡️</div>
-        <h3>{{ wt(site_lang, 'feature1_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature1_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎵</div>
-        <h3>{{ wt(site_lang, 'feature2_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature2_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎫</div>
-        <h3>{{ wt(site_lang, 'feature3_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature3_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📝</div>
-        <h3>{{ wt(site_lang, 'feature4_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature4_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📈</div>
-        <h3>{{ wt(site_lang, 'feature5_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature5_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🌐</div>
-        <h3>{{ wt(site_lang, 'feature6_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature6_desc') }}</p>
-    </div>
+{% for e in entries %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
+    <span>{{ e.emoji }} → Rollen-ID {{ e.role_id }} (Nachricht {{ e.message_id }})</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/reactionroles/{{ e.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
 </div>
-
-<p class="small-print" style="text-align:center; margin-top:48px;">
-    <a href="/impressum">Impressum</a> ·
-    <a href="/datenschutz">Datenschutz</a>
-</p>
+{% else %}
+<p style="color:#9297ab;">Noch keine Reaction-Roles eingerichtet.</p>
+{% endfor %}
 {% endblock %}

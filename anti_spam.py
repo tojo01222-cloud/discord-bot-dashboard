@@ -1,294 +1,202 @@
 """
-Gewinnspiel-System.
+Anti-Hack-System.
 
-/giveaway start <name> <beschreibung> <zeit> <kanal> [gesponsert_von] [invites_benoetigt] [nur_neue_invites]
-/giveaway end <id>       -- vorzeitig beenden und auslosen
-/giveaway reroll <id>    -- neuen Gewinner auslosen
-/giveaway list            -- laufende Gewinnspiele
+- /antihack on|off              -- System ein-/ausschalten (SERVER_ADMIN)
+- /antihack_add <user|rolle>    -- von der Erkennung ausnehmen (SERVER_ADMIN)
+- /antihack_liste                -- zeigt die Ausnahmeliste
 
-Zeit-Auswahl: 30s bis 4w, wie gewünscht.
-Invites: 1-100 einstellbar, wahlweise "alle bisherigen" oder "nur neue seit
-Gewinnspielstart" (siehe use_new_invites_only).
-
-Buttons sind persistent (überleben einen Bot-Neustart) -- werden beim Start
-für alle noch laufenden Gewinnspiele neu registriert (siehe cog_load).
+Erkennung: postet ein Account innerhalb kurzer Zeit etwas mit Anhang oder Link
+(z.B. Bilder) in mehrere VERSCHIEDENE Kanäle, gilt das als typisches Verhalten
+eines gekaperten/kompromittierten Accounts (Self-Bot-Spam) -- der Account wird
+automatisch gekickt, informiert per DM (best effort) und im Strafregister
+vermerkt. Ganz normales Chatten in mehreren Kanälen OHNE Anhang/Link löst
+NICHTS aus, um Fehlalarme bei normalen Usern zu vermeiden.
 """
 import datetime as dt
 import logging
-import random
+import re
+from collections import defaultdict, deque
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 from bot.utils.permissions import require_level, PermissionLevel
 from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.i18n import t
 from bot.utils.db_helpers import (
     get_guild_language,
-    create_giveaway,
-    set_giveaway_message_id,
-    get_active_giveaways,
-    get_giveaways_for_guild,
-    get_giveaway,
-    end_giveaway,
-    add_giveaway_entry,
-    get_giveaway_entries,
-    get_invite_count,
+    get_anti_hack_enabled,
+    set_anti_hack_enabled,
+    is_anti_exempt,
+    add_anti_exemption,
+    remove_anti_exemption,
+    get_anti_exemptions,
+    log_punishment,
 )
+from bot.database.db import get_session
+from bot.database.models import GuildSettings
 
-log = logging.getLogger("bot.cogs.giveaway")
+log = logging.getLogger("bot.anti_hack")
 
-TIME_CHOICES = {
-    "30s": 30, "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
-    "1h": 3600, "2h": 7200, "3h": 10800, "4h": 14400, "5h": 18000, "6h": 21600, "12h": 43200,
-    "1d": 86400, "2d": 172800, "3d": 259200, "4d": 345600, "5d": 432000, "6d": 518400,
-    "1w": 604800, "2w": 1209600, "3w": 1814400, "4w": 2419200,
-}
+# Schwellenwerte: X VERSCHIEDENE Kanäle mit Anhang/Link innerhalb von Y Sekunden.
+DISTINCT_CHANNEL_THRESHOLD = 3
+WINDOW_SECONDS = 15
 
-
-def _build_giveaway_embed(giveaway, entry_count: int) -> discord.Embed:
-    embed = discord.Embed(
-        title=f"🎉 {giveaway.name}",
-        description=giveaway.description or "Klicke auf den Button, um teilzunehmen!",
-        color=discord.Color.gold(),
-    )
-    embed.add_field(name="Endet", value=discord.utils.format_dt(giveaway.ends_at.replace(tzinfo=dt.timezone.utc), style="R"), inline=True)
-    embed.add_field(name="Teilnehmer", value=str(entry_count), inline=True)
-    if giveaway.sponsor:
-        embed.add_field(name="Gesponsert von", value=giveaway.sponsor, inline=True)
-    if giveaway.invites_required > 0:
-        scope = "neue Invites seit Start" if giveaway.use_new_invites_only else "Invites insgesamt"
-        embed.add_field(name="Voraussetzung", value=f"Mindestens {giveaway.invites_required} {scope}", inline=False)
-    if giveaway.ended:
-        winner_text = f"<@{giveaway.winner_id}>" if giveaway.winner_id else "Niemand (keine gültige Teilnahme)"
-        embed.add_field(name="🏆 Gewinner", value=winner_text, inline=False)
-        embed.color = discord.Color.dark_grey()
-    return embed
+_LINK_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 
 
-async def _handle_giveaway_join(interaction: discord.Interaction, giveaway_id: int) -> None:
-    giveaway = await get_giveaway(giveaway_id)
-    lang = await get_guild_language(interaction.guild.id)
-
-    if not giveaway or giveaway.ended:
-        await interaction.response.send_message(
-            "Dieses Gewinnspiel ist bereits beendet." if lang == "de" else "This giveaway has already ended.",
-            ephemeral=True)
-        return
-
-    if giveaway.invites_required > 0:
-        since = giveaway.started_at if giveaway.use_new_invites_only else None
-        count = await get_invite_count(giveaway.guild_id, interaction.user.id, since=since)
-        if count < giveaway.invites_required:
-            missing = giveaway.invites_required - count
-            await interaction.response.send_message(
-                (f"Du brauchst mindestens {giveaway.invites_required} Einladungen, um teilzunehmen "
-                 f"(du hast aktuell {count}, es fehlen noch {missing}).") if lang == "de" else
-                (f"You need at least {giveaway.invites_required} invites to enter "
-                 f"(you currently have {count}, {missing} more needed)."),
-                ephemeral=True)
-            return
-
-    added = await add_giveaway_entry(giveaway_id, interaction.user.id)
-    if added:
-        await interaction.response.send_message(
-            "Du nimmst jetzt teil! 🎉" if lang == "de" else "You're entered! 🎉", ephemeral=True)
-    else:
-        await interaction.response.send_message(
-            "Du nimmst bereits teil." if lang == "de" else "You're already entered.", ephemeral=True)
+def _looks_shareable(message: discord.Message) -> bool:
+    """True, wenn die Nachricht etwas 'Teilbares' enthält (Anhang oder Link) --
+    reines Chatten ohne das löst die Erkennung nie aus."""
+    return bool(message.attachments) or bool(_LINK_RE.search(message.content or ""))
 
 
-class GiveawayView(discord.ui.View):
-    """Persistenter View mit dynamischem custom_id pro Gewinnspiel (jedes
-    Gewinnspiel braucht seinen eigenen Button, daher kein fester custom_id
-    wie beim Ticket-System, sondern einer, der die Gewinnspiel-ID enthält)."""
-
-    def __init__(self, giveaway_id: int):
-        super().__init__(timeout=None)
-        self.giveaway_id = giveaway_id
-        button = discord.ui.Button(
-            label="Teilnehmen", emoji="🎉", style=discord.ButtonStyle.success,
-            custom_id=f"giveaway_join_{giveaway_id}",
-        )
-        button.callback = self._join_callback
-        self.add_item(button)
-
-    async def _join_callback(self, interaction: discord.Interaction):
-        await _handle_giveaway_join(interaction, self.giveaway_id)
-
-
-class Giveaway(commands.Cog):
+class AntiHack(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # guild_id -> user_id -> deque[(timestamp, channel_id)]
+        self._activity: dict[int, dict[int, deque]] = defaultdict(lambda: defaultdict(deque))
+        self._punishing: set[tuple[int, int]] = set()
 
-    async def cog_load(self) -> None:
-        # Persistente Views für alle noch laufenden Gewinnspiele neu registrieren.
-        active = await get_active_giveaways()
-        for g in active:
-            self.bot.add_view(GiveawayView(g.id))
-        self._check_expired_giveaways.start()
+    async def _is_exempt(self, member: discord.Member) -> bool:
+        if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
+            return True
+        if await is_anti_exempt(member.guild.id, "antihack", "user", member.id):
+            return True
+        for role in member.roles:
+            if await is_anti_exempt(member.guild.id, "antihack", "role", role.id):
+                return True
+        return False
 
-    def cog_unload(self) -> None:
-        self._check_expired_giveaways.cancel()
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild or not isinstance(message.author, discord.Member):
+            return
+        if not await get_anti_hack_enabled(message.guild.id):
+            return
+        if not _looks_shareable(message):
+            return
+        if await self._is_exempt(message.author):
+            return
 
-    @tasks.loop(seconds=30)
-    async def _check_expired_giveaways(self) -> None:
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        bucket = self._activity[message.guild.id][message.author.id]
+        bucket.append((now, message.channel.id))
+        while bucket and now - bucket[0][0] > WINDOW_SECONDS:
+            bucket.popleft()
+
+        distinct_channels = {ch for _, ch in bucket}
+        if len(distinct_channels) >= DISTINCT_CHANNEL_THRESHOLD:
+            bucket.clear()
+            await self._punish(message.guild, message.author, len(distinct_channels))
+
+    async def _punish(self, guild: discord.Guild, member: discord.Member, channel_count: int) -> None:
+        key = (guild.id, member.id)
+        if key in self._punishing:
+            return
+        self._punishing.add(key)
         try:
-            active = await get_active_giveaways()
-            now = dt.datetime.utcnow()
-            for g in active:
-                if g.ends_at <= now:
-                    await self._finish_giveaway(g.id)
-        except Exception:
-            log.exception("Fehler beim Prüfen abgelaufener Gewinnspiele")
+            lang = await get_guild_language(guild.id)
 
-    async def _finish_giveaway(self, giveaway_id: int) -> None:
-        giveaway = await get_giveaway(giveaway_id)
-        if not giveaway or giveaway.ended:
-            return
+            try:
+                await member.send(t("antihack.kicked_dm", lang, guild=guild.name))
+            except discord.Forbidden:
+                pass  # DMs geschlossen -- kein Blocker für den Kick
 
-        entries = await get_giveaway_entries(giveaway_id)
-        guild = self.bot.get_guild(giveaway.guild_id)
+            try:
+                await member.kick(reason="Anti-Hack: verdächtiges kanalübergreifendes Spam-Verhalten")
+            except discord.Forbidden:
+                log.warning("Konnte %s in Guild %s nicht kicken (fehlende Berechtigung).", member.id, guild.id)
+                return
 
-        # Bevorzugt jemanden auslosen, der den Server nicht inzwischen verlassen
-        # hat (Bug-Fix: vorher konnte ein längst ausgetretenes Mitglied gewinnen,
-        # dessen Erwähnung dann ins Leere zeigte). Sind ALLE Teilnehmer weg
-        # (z.B. sehr alter Giveaway), wird trotzdem ausgelost statt "niemand" zu
-        # melden -- das bleibt die bewusste Ausnahme.
-        eligible = [e for e in entries if guild and guild.get_member(e.user_id)] if guild else list(entries)
-        pool = eligible or entries
-        winner_id = random.choice(pool).user_id if pool else 0
-        await end_giveaway(giveaway_id, winner_id)
+            await log_punishment(guild.id, member.id, self.bot.user.id, "anti_hack_kick",
+                                  f"Automatisch: identisches/teilbares Verhalten in {channel_count} Kanälen")
 
-        if not guild:
-            return
-        channel = guild.get_channel(giveaway.channel_id)
-        if not channel:
-            return
+            embed = base_embed("🚨 Anti-Hack" if lang == "de" else "🚨 Anti-hack")
+            embed.color = discord.Color.red()
+            embed.description = t("antihack.alert", lang, user=member.mention, count=channel_count)
 
-        giveaway = await get_giveaway(giveaway_id)  # frisch mit ended=True/winner_id laden
-        embed = _build_giveaway_embed(giveaway, len(entries))
+            async with get_session() as session:
+                settings = await session.get(GuildSettings, guild.id)
+                log_channel_id = settings.mod_log_channel_id if settings else 0
+            if log_channel_id:
+                channel = guild.get_channel(log_channel_id)
+                if channel:
+                    await channel.send(embed=embed)
+        finally:
+            self._punishing.discard(key)
 
-        try:
-            if giveaway.message_id:
-                try:
-                    message = await channel.fetch_message(giveaway.message_id)
-                    await message.edit(embed=embed, view=None)
-                except discord.NotFound:
-                    pass
-            if winner_id:
-                await channel.send(f"🎉 Herzlichen Glückwunsch <@{winner_id}>! Du hast **{giveaway.name}** gewonnen!")
-            else:
-                await channel.send(f"Das Gewinnspiel **{giveaway.name}** ist beendet, aber es gab keine Teilnehmer.")
-        except discord.Forbidden:
-            pass
-
-    @commands.hybrid_group(name="giveaway", description="Gewinnspiele verwalten.")
+    # ---------- Commands ----------
+    @commands.hybrid_group(name="antihack", description="Anti-Hack-System verwalten.")
     @commands.guild_only()
-    async def giveaway(self, ctx: commands.Context):
+    async def antihack(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @giveaway.command(name="start", description="Startet ein neues Gewinnspiel.")
-    @app_commands.describe(
-        name="Name des Gewinnspiels", beschreibung="Beschreibung/Preis", zeit="Wie lange das Gewinnspiel läuft",
-        kanal="In welchem Kanal das Gewinnspiel gepostet wird", gesponsert_von="Optional: Sponsor-Name",
-        invites_benoetigt="0-100, wie viele Einladungen zur Teilnahme nötig sind (0 = keine Anforderung)",
-        nur_neue_invites="Nur Invites seit Gewinnspielstart zählen (statt aller bisherigen)?",
-    )
-    @app_commands.choices(zeit=[app_commands.Choice(name=k, value=k) for k in TIME_CHOICES.keys()])
+    @antihack.command(name="on", description="Aktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def giveaway_start(
-        self, ctx: commands.Context, name: str, beschreibung: str, zeit: str, kanal: discord.TextChannel,
-        gesponsert_von: str = "", invites_benoetigt: int = 0, nur_neue_invites: bool = True,
-    ):
+    async def antihack_on(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
+        await set_anti_hack_enabled(ctx.guild.id, True)
+        await ctx.send(embed=success_embed(t("anti.enabled", lang, feature="Anti-Hack")))
 
-        if zeit not in TIME_CHOICES:
-            await ctx.send(embed=error_embed("Ungültige Zeitauswahl." if lang == "de" else "Invalid time choice."))
-            return
-        if invites_benoetigt < 0 or invites_benoetigt > 100:
-            await ctx.send(embed=error_embed(
-                "invites_benoetigt muss zwischen 0 und 100 liegen." if lang == "de"
-                else "invites_benoetigt must be between 0 and 100."))
-            return
-
-        await ctx.defer()
-
-        ends_at = dt.datetime.utcnow() + dt.timedelta(seconds=TIME_CHOICES[zeit])
-        giveaway = await create_giveaway(
-            ctx.guild.id, kanal.id, name, beschreibung, gesponsert_von,
-            invites_benoetigt, nur_neue_invites, ctx.author.id, ends_at,
-        )
-
-        embed = _build_giveaway_embed(giveaway, 0)
-        view = GiveawayView(giveaway.id)
-        message = await kanal.send(embed=embed, view=view)
-        await set_giveaway_message_id(giveaway.id, message.id)
-
-        await ctx.send(embed=success_embed(
-            "Gewinnspiel gestartet" if lang == "de" else "Giveaway started",
-            f"In {kanal.mention}, endet in {zeit}.",
-        ))
-
-    @giveaway.command(name="end", description="Beendet ein Gewinnspiel sofort und lost aus.")
-    @app_commands.describe(giveaway_id="Die ID des Gewinnspiels (siehe /giveaway list)")
+    @antihack.command(name="off", description="Deaktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def giveaway_end(self, ctx: commands.Context, giveaway_id: int):
+    async def antihack_off(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        giveaway = await get_giveaway(giveaway_id)
-        if not giveaway or giveaway.guild_id != ctx.guild.id:
-            await ctx.send(embed=error_embed("Gewinnspiel nicht gefunden." if lang == "de" else "Giveaway not found."))
-            return
-        if giveaway.ended:
-            await ctx.send(embed=error_embed("Ist bereits beendet." if lang == "de" else "Already ended."))
-            return
+        await set_anti_hack_enabled(ctx.guild.id, False)
+        await ctx.send(embed=success_embed(t("anti.disabled", lang, feature="Anti-Hack")))
 
-        await ctx.defer()
-        await self._finish_giveaway(giveaway_id)
-        await ctx.send(embed=success_embed("Beendet und ausgelost." if lang == "de" else "Ended and drawn."))
-
-    @giveaway.command(name="reroll", description="Lost einen neuen Gewinner für ein beendetes Gewinnspiel aus.")
-    @app_commands.describe(giveaway_id="Die ID des Gewinnspiels")
+    @commands.hybrid_command(name="antihack_add", description="Nimmt einen User oder eine Rolle von der Anti-Hack-Erkennung aus.")
+    @app_commands.describe(user="Optional: ein User", rolle="Optional: eine Rolle")
+    @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def giveaway_reroll(self, ctx: commands.Context, giveaway_id: int):
-        lang = await get_guild_language(ctx.guild.id)
-        giveaway = await get_giveaway(giveaway_id)
-        if not giveaway or giveaway.guild_id != ctx.guild.id or not giveaway.ended:
-            await ctx.send(embed=error_embed(
-                "Kein beendetes Gewinnspiel mit dieser ID gefunden." if lang == "de"
-                else "No ended giveaway found with that ID."))
-            return
+    async def antihack_add(self, ctx: commands.Context, user: discord.Member = None, rolle: discord.Role = None):
+        await _add_exemption(ctx, "antihack", "Anti-Hack", user, rolle)
 
-        entries = await get_giveaway_entries(giveaway_id)
-        if not entries:
-            await ctx.send(embed=error_embed("Keine Teilnehmer vorhanden." if lang == "de" else "No entries."))
-            return
+    @commands.hybrid_command(name="antihack_liste", description="Zeigt die Anti-Hack-Ausnahmeliste.")
+    @commands.guild_only()
+    async def antihack_liste(self, ctx: commands.Context):
+        await _list_exemptions(ctx, "antihack", "Anti-Hack")
 
-        new_winner = random.choice(entries).user_id
-        await end_giveaway(giveaway_id, new_winner)
-        await ctx.send(embed=success_embed(
-            "Neu ausgelost" if lang == "de" else "Rerolled",
-            f"🎉 Neuer Gewinner: <@{new_winner}>",
-        ))
 
-    @giveaway.command(name="list", description="Zeigt alle laufenden Gewinnspiele.")
-    async def giveaway_list(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        all_giveaways = await get_giveaways_for_guild(ctx.guild.id)
-        active = [g for g in all_giveaways if not g.ended]
+async def _add_exemption(ctx: commands.Context, feature: str, label: str,
+                          user: discord.Member = None, rolle: discord.Role = None) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    if not user and not rolle:
+        await ctx.send(embed=error_embed(
+            "Gib entweder einen User oder eine Rolle an." if lang == "de"
+            else "Provide either a user or a role."))
+        return
 
-        if not active:
-            await ctx.send(embed=error_embed("Keine laufenden Gewinnspiele." if lang == "de"
-                                              else "No active giveaways."))
-            return
+    target = user or rolle
+    target_type = "user" if user else "role"
+    target_mention = target.mention
 
-        embed = base_embed("🎉 Laufende Gewinnspiele" if lang == "de" else "🎉 Active giveaways")
-        lines = [f"#{g.id} — **{g.name}** (endet {discord.utils.format_dt(g.ends_at.replace(tzinfo=dt.timezone.utc), style='R')})"
-                 for g in active]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
+    added = await add_anti_exemption(ctx.guild.id, feature, target_type, target.id, ctx.author.id)
+    if added:
+        await ctx.send(embed=success_embed(t("anti.exempt_added", lang, target=target_mention, feature=label)))
+    else:
+        await ctx.send(embed=error_embed(t("anti.exempt_already", lang, target=target_mention, feature=label)))
+
+
+async def _list_exemptions(ctx: commands.Context, feature: str, label: str) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    entries = await get_anti_exemptions(ctx.guild.id, feature)
+    if not entries:
+        await ctx.send(embed=error_embed(t("anti.exempt_list_empty", lang, feature=label)))
+        return
+
+    lines = []
+    for e in entries:
+        mention = f"<@{e.target_id}>" if e.target_type == "user" else f"<@&{e.target_id}>"
+        lines.append(mention)
+
+    embed = base_embed(t("anti.exempt_list_title", lang, feature=label))
+    embed.description = "\n".join(lines[:50])
+    await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Giveaway(bot))
+    await bot.add_cog(AntiHack(bot))

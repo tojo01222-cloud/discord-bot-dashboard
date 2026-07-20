@@ -1,23 +1,29 @@
 {% extends "admin_base.html" %}
-{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% block title %}Dashboard-User — Admin-Panel{% endblock %}
 {% block content %}
-<h1>Ankündigungs-Historie</h1>
-<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+<h1>Dashboard-User ({{ dashboard_users|length }})</h1>
+<p style="color:#9297ab; font-size:13px;">
+    Login läuft ausschließlich über Discord (OAuth) — es gibt bei uns keine Passwörter
+    oder E-Mail-Adressen zu diesen Usern, weil wir sowas nicht erheben.
+</p>
 
-{% if not announcements %}
-<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
-{% else %}
+<form method="get" action="/admin/users" style="margin-bottom:20px;">
+    <input type="text" name="q" placeholder="Nach Discord-Namen suchen..." value="{{ q|default('') }}"
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;min-width:260px;">
+    <button type="submit" class="btn btn-small">Suchen</button>
+</form>
+
 <div class="admin-card">
     <table class="admin-table">
-        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
-        {% for a in announcements %}
+        <tr><th>Discord-Name</th><th>Eigene ID</th><th>Erster Login</th><th>Letzter Login</th></tr>
+        {% for u in dashboard_users %}
         <tr>
-            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
-            <td>{{ a.guild_count }}</td>
-            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
+            <td>{{ u.username }}</td>
+            <td style="font-family:monospace; font-size:12px;">{{ u.id }}</td>
+            <td>{{ u.first_login_at.strftime('%d.%m.%Y %H:%M') }}</td>
+            <td>{{ u.last_login_at.strftime('%d.%m.%Y %H:%M') }}</td>
         </tr>
         {% endfor %}
     </table>
 </div>
-{% endif %}
 {% endblock %}

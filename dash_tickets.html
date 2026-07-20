@@ -1,34 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Bewerbungen — {{ guild.name }}{% endblock %}
+{% block title %}News{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Bewerbungen — {{ guild.name }}</h1>
+<a href="/" class="back-link">← Back</a>
+<h1>{{ wt(site_lang, 'news_title') }}</h1>
 
-<form method="get" action="/dashboard/{{ guild.id }}/bewerbungen" style="margin-bottom:20px;">
-    <select name="status" onchange="this.form.submit()"
-            style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:8px;">
-        <option value="" {% if not status %}selected{% endif %}>Alle</option>
-        <option value="pending" {% if status == "pending" %}selected{% endif %}>Offen</option>
-        <option value="accepted" {% if status == "accepted" %}selected{% endif %}>Angenommen</option>
-        <option value="rejected" {% if status == "rejected" %}selected{% endif %}>Abgelehnt</option>
-    </select>
-</form>
-
-{% if not applications %}
-<p style="color:#9297ab;">Keine Bewerbungen gefunden.</p>
+{% if not posts %}
+<p style="color:#9297ab;">{{ wt(site_lang, 'news_empty') }}</p>
 {% else %}
-<div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
-    {% for a in applications %}
-    <div style="display:flex; justify-content:space-between; align-items:center;
-                background:#14151f; border:1px solid #262838; border-radius:10px; padding:18px 22px;">
-        <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}" style="text-decoration:none; color:inherit;">
-            <div style="font-weight:700; color:#f5f6fa;">{{ a.applicant_username }}</div>
-            <div style="color:#9297ab; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
-        </a>
-        <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}/loeschen"
-              onsubmit="return confirm('Diese Bewerbung wirklich löschen?');">
-            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-        </form>
+<div style="display:flex; flex-direction:column; gap:18px; margin-top:24px;">
+    {% for post in posts %}
+    <div class="feature-card">
+        <h3>{{ post.title }}</h3>
+        <p style="color:#9297ab; font-size:12px; margin-bottom:10px;">{{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+        <p style="color:#f5f6fa;">{{ post.content }}</p>
     </div>
     {% endfor %}
 </div>

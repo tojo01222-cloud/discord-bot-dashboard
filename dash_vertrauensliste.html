@@ -1,45 +1,45 @@
-{% extends "admin_base.html" %}
-{% block title %}News — Admin-Panel{% endblock %}
-{% block content %}
-<h1>News verwalten</h1>
-<p style="color:#9297ab; font-size:13px;">Wird öffentlich unter <code>/news</code> angezeigt.</p>
-
-<div class="admin-card">
-    <h2 style="margin-bottom:12px;">Neuer Beitrag</h2>
-    <form method="post" action="/admin/news" class="admin-form">
-        <div>
-            <label for="title">Titel</label>
-            <input type="text" id="title" name="title" required>
-        </div>
-        <div>
-            <label for="content">Inhalt</label>
-            <textarea id="content" name="content" required></textarea>
-        </div>
-        <button type="submit" class="btn btn-small">Veröffentlichen</button>
-    </form>
-</div>
-
-{% for post in posts %}
-<div class="admin-card">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-            <strong>{{ post.title }}</strong>
-            <span style="color:#9297ab; font-size:12px;"> — {{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
-            <p style="margin-top:8px;">{{ post.content }}</p>
-        </div>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin-Panel{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div class="admin-layout">
+        <nav class="admin-sidebar">
+            <div class="admin-brand">🛡️ Admin-Panel</div>
+            <a href="/admin">📊 Übersicht</a>
+            <a href="/admin/stats">📈 Statistiken</a>
+            <a href="/admin/servers">🌐 Server</a>
+            <a href="/admin/broadcast">📢 Ankündigungen</a>
+            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
+            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
+            <a href="/admin/users">👥 Dashboard-User</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
+            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
+            {% endif %}
+            <a href="/admin/system">💻 System</a>
+            <a href="/admin/news">📰 News</a>
+            <a href="/admin/account">👤 Mein Account</a>
+            <div class="admin-sidebar-footer">
+                <span>{{ admin.username if admin }}</span>
+                {% if operator_invite %}
+                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
+                {% endif %}
+                <a href="/admin/logout">Logout</a>
+                <span style="font-size:11px; opacity:0.7;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}</span>
+            </div>
+        </nav>
+        <main class="admin-content">
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            {% block content %}{% endblock %}
+        </main>
     </div>
-    <div style="display:flex; gap:10px; margin-top:10px;">
-        <form method="post" action="/admin/news/{{ post.id }}/toggle">
-            <input type="hidden" name="published" value="{{ '' if post.published else 'on' }}">
-            <button type="submit" class="btn btn-small btn-ghost">{{ "Verbergen" if post.published else "Veröffentlichen" }}</button>
-        </form>
-        <form method="post" action="/admin/news/{{ post.id }}/delete"
-              onsubmit="return confirm('Diesen Beitrag wirklich löschen?');">
-            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-        </form>
-    </div>
-</div>
-{% else %}
-<p style="color:#9297ab;">Noch keine News-Beiträge.</p>
-{% endfor %}
-{% endblock %}
+</body>
+</html>
