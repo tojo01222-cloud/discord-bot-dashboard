@@ -131,10 +131,16 @@ class InfoHelp(commands.Cog):
             count = len(by_category[cat])
             plural = "Befehle" if lang == "de" else "commands"
             overview_lines.append(f"{emoji} **{cat}** — {count} {plural}")
+        prefix_note = (
+            "💡 Jeder Befehl funktioniert sowohl als `/befehl` als auch als `!befehl`.\n\n"
+            if lang == "de" else
+            "💡 Every command works both as `/command` and as `!command`.\n\n"
+        )
         embed.description = (
-            ("Wähle unten eine Kategorie aus, um die Befehle mit Beschreibung zu sehen.\n\n"
-             if lang == "de" else
-             "Pick a category below to see its commands with descriptions.\n\n")
+            prefix_note
+            + ("Wähle unten eine Kategorie aus, um die Befehle mit Beschreibung zu sehen.\n\n"
+               if lang == "de" else
+               "Pick a category below to see its commands with descriptions.\n\n")
             + "\n".join(overview_lines)
         )
         embed.set_footer(text=f"{total_commands} Befehle insgesamt" if lang == "de"

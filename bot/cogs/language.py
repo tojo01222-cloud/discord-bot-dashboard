@@ -31,24 +31,26 @@ from bot.utils.db_helpers import get_guild_language, set_guild_language
 LANGUAGE_CHOICES = [
     app_commands.Choice(name="Deutsch", value="de"),
     app_commands.Choice(name="English", value="en"),
+    app_commands.Choice(name="Español", value="es"),
 ]
-LANGUAGE_LABELS = {"de": "Deutsch", "en": "English"}
+LANGUAGE_LABELS = {"de": "Deutsch", "en": "English", "es": "Español"}
+VALID_LANGUAGES = ("de", "en", "es")
 
 
 class Language(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="language", description="Stellt die Sprache des Bots für diesen Server ein (de/en).")
-    @app_commands.describe(sprache="de für Deutsch, en für Englisch")
+    @commands.hybrid_command(name="language", description="Stellt die Sprache des Bots für diesen Server ein (de/en/es).")
+    @app_commands.describe(sprache="de für Deutsch, en für Englisch, es für Spanisch")
     @app_commands.choices(sprache=LANGUAGE_CHOICES)
     @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
     async def language(self, ctx: commands.Context, sprache: str):
-        if sprache not in ("de", "en"):
+        if sprache not in VALID_LANGUAGES:
             current_lang = await get_guild_language(ctx.guild.id)
-            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de' oder 'en'." if current_lang == "de"
-                                              else "Invalid language -- use 'de' or 'en'."))
+            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de', 'en' oder 'es'." if current_lang == "de"
+                                              else "Invalid language -- use 'de', 'en', or 'es'."))
             return
 
         await set_guild_language(ctx.guild.id, sprache)
@@ -58,15 +60,15 @@ class Language(commands.Cog):
         name="language_aktualisieren",
         description="Setzt die Sprache und synchronisiert die Slash-Commands sofort neu für diesen Server.",
     )
-    @app_commands.describe(sprache="de für Deutsch, en für Englisch")
+    @app_commands.describe(sprache="de für Deutsch, en für Englisch, es für Spanisch")
     @app_commands.choices(sprache=LANGUAGE_CHOICES)
     @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
     async def language_aktualisieren(self, ctx: commands.Context, sprache: str):
-        if sprache not in ("de", "en"):
+        if sprache not in VALID_LANGUAGES:
             current_lang = await get_guild_language(ctx.guild.id)
-            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de' oder 'en'." if current_lang == "de"
-                                              else "Invalid language -- use 'de' or 'en'."))
+            await ctx.send(embed=error_embed("Ungültige Sprache -- nutze 'de', 'en' oder 'es'." if current_lang == "de"
+                                              else "Invalid language -- use 'de', 'en', or 'es'."))
             return
 
         await ctx.defer()

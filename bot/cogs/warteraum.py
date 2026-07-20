@@ -158,7 +158,12 @@ class Warteraum(commands.Cog):
             return
 
         embed = base_embed("🙋 Warteraum" if lang == "de" else "🙋 Waiting room")
-        embed.description = t("warteraum.notify", lang, user=member.mention, channel=after.channel.mention)
+        custom_message = snapshot.get("waiting_room_message", "")
+        if custom_message:
+            embed.description = custom_message.replace("{user}", member.mention).replace(
+                "{channel}", after.channel.mention)
+        else:
+            embed.description = t("warteraum.notify", lang, user=member.mention, channel=after.channel.mention)
         try:
             await notify_channel.send(embed=embed, view=WaitingRoomAckView(lang))
         except discord.Forbidden:

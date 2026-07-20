@@ -55,6 +55,7 @@ from bot.utils.db_helpers import (
     create_ticket_category,
     update_ticket_category,
     delete_ticket_category,
+    count_open_tickets_by_category,
 )
 from bot.database.db import get_session
 from bot.database.models import TicketCategory
@@ -80,7 +81,7 @@ def _parse_color_hex(value: str) -> str:
     return candidate
 
 
-def _build_panel_embed(lang: str, design: str, categories: list[TicketCategory]) -> discord.Embed:
+async def _build_panel_embed(lang: str, design: str, categories: list[TicketCategory]) -> discord.Embed:
     style = DESIGNS.get(design, DESIGNS["standard"])
     embed = discord.Embed(
         title=f"{style['emoji']} {t('ticket.panel_title', lang)}",
@@ -88,8 +89,16 @@ def _build_panel_embed(lang: str, design: str, categories: list[TicketCategory])
         color=style["color"],
     )
     if categories:
-        lines = [f"{c.emoji} **{c.name}**" + (f"\n> {c.description}" if c.description else "")
-                  for c in categories[:25]]
+        lines = []
+        for c in categories[:25]:
+            line = f"{c.emoji} **{c.name}**" + (f"\n> {c.description}" if c.description else "")
+            if c.max_concurrent:
+                open_count = await count_open_tickets_by_category(c.id)
+                available = max(0, c.max_concurrent - open_count)
+                percent = round((available / c.max_concurrent) * 100)
+                line += (f"\n> {'Verfügbar' if lang == 'de' else 'Available'}: "
+                         f"{available}/{c.max_concurrent} ({percent}%)")
+            lines.append(line)
         embed.add_field(
             name="📂 " + ("Verfügbare Ticket-Arten" if lang == "de" else "Available ticket types"),
             value="\n".join(lines),
@@ -223,6 +232,23 @@ async def _handle_create_ticket(interaction: discord.Interaction, design: str = 
             )
             return
 
+    # Kapazitätsprüfung: ist für diese Ticket-Art ein Limit gleichzeitig
+    # offener Tickets gesetzt (max_concurrent > 0) und schon erreicht?
+    if category_id:
+        category_check = await get_ticket_category(category_id)
+        if category_check and category_check.max_concurrent:
+            open_count = await count_open_tickets_by_category(category_id)
+            if open_count >= category_check.max_concurrent:
+                await interaction.response.send_message(
+                    embed=error_embed(
+                        f"„{category_check.name}“ ist gerade voll ausgelastet ({open_count}/"
+                        f"{category_check.max_concurrent}) -- versuch es später nochmal." if lang == "de" else
+                        f"\"{category_check.name}\" is currently at full capacity ({open_count}/"
+                        f"{category_check.max_concurrent}) -- please try again later."),
+                    ephemeral=True,
+                )
+                return
+
     await interaction.response.defer(ephemeral=True)
 
     category = await get_ticket_category(category_id) if category_id else None
@@ -292,7 +318,16 @@ async def _handle_create_ticket(interaction: discord.Interaction, design: str = 
         description=desc,
         color=color,
     )
-    await ticket_channel.send(content=member.mention, embed=welcome, view=TicketCloseView())
+
+    # Konfigurierte Ping-Rolle für diese Ticket-Art erwähnen (falls gesetzt) --
+    # zusätzlich zum Ersteller, damit das zuständige Team sofort benachrichtigt wird.
+    ping_content = member.mention
+    if category and category.ping_role_id:
+        role = guild.get_role(category.ping_role_id)
+        if role:
+            ping_content = f"{member.mention} {role.mention}"
+
+    await ticket_channel.send(content=ping_content, embed=welcome, view=TicketCloseView())
     await interaction.followup.send(
         embed=success_embed(t("ticket.created", lang, channel=ticket_channel.mention)),
         ephemeral=True,
@@ -387,7 +422,7 @@ class Tickets(commands.Cog):
     async def ticketpanel_send(self, ctx: commands.Context, channel: discord.TextChannel, design: str = "standard"):
         lang = await get_guild_language(ctx.guild.id)
         categories = await get_ticket_categories(ctx.guild.id)
-        embed = _build_panel_embed(lang, design, categories)
+        embed = await _build_panel_embed(lang, design, categories)
 
         if categories:
             view = TicketPanelSelectView(categories, design=design)
@@ -420,11 +455,14 @@ class Tickets(commands.Cog):
         beschreibung="Kurze Beschreibung, im Auswahlmenü sichtbar",
         farbe="Hex-Farbcode für die Willkommens-Nachricht, z.B. #5865F2",
         kanal_kategorie="Eigene Discord-Kanalkategorie für diese Ticket-Art (optional)",
+        max_gleichzeitig="Maximal gleichzeitig offene Tickets dieser Art (0 = unbegrenzt)",
+        ping_rolle="Rolle, die beim Öffnen eines Tickets dieser Art erwähnt wird (optional)",
     )
     @require_level(PermissionLevel.SERVER_ADMIN)
     async def ticketart_erstellen(
         self, ctx: commands.Context, name: str, emoji: str = "🎫", beschreibung: str = "",
         farbe: str = "", kanal_kategorie: discord.CategoryChannel = None,
+        max_gleichzeitig: int = 0, ping_rolle: discord.Role = None,
     ):
         lang = await get_guild_language(ctx.guild.id)
 
@@ -446,6 +484,7 @@ class Tickets(commands.Cog):
         category = await create_ticket_category(
             ctx.guild.id, name=name, emoji=emoji, description=beschreibung,
             color_hex=color_hex, channel_category_id=kanal_kategorie.id if kanal_kategorie else 0,
+            max_concurrent=max(0, max_gleichzeitig), ping_role_id=ping_rolle.id if ping_rolle else 0,
         )
 
         note = ""
