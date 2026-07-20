@@ -2,29 +2,28 @@
 {% block title %}Apply for our Team{% endblock %}
 {% block content %}
 <div class="hero">
-    <h1>Apply for our Team</h1>
-    <p>Want to help out? You can apply to join our team directly on our Discord server —
-       our staff reviews every application personally.</p>
+    <h1>{{ wt(site_lang, 'apply_title') }}</h1>
+    <p>{{ wt(site_lang, 'apply_subtitle') }}</p>
     {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 Join our Discord & Apply</a>
+    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 {{ wt(site_lang, 'apply_btn') }}</a>
     {% endif %}
 </div>
 
 <div class="feature-grid">
     <div class="feature-card">
         <div class="icon">1️⃣</div>
-        <h3>Join the Discord</h3>
-        <p>Click the button above to join our official Discord server.</p>
+        <h3>{{ wt(site_lang, 'apply_step1_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step1_desc') }}</p>
     </div>
     <div class="feature-card">
         <div class="icon">2️⃣</div>
-        <h3>Find the Application</h3>
-        <p>Look for our application channel or ticket system, or check the server dashboard for an application form.</p>
+        <h3>{{ wt(site_lang, 'apply_step2_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step2_desc') }}</p>
     </div>
     <div class="feature-card">
         <div class="icon">3️⃣</div>
-        <h3>Get Reviewed</h3>
-        <p>Our team reviews applications personally and will get back to you.</p>
+        <h3>{{ wt(site_lang, 'apply_step3_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step3_desc') }}</p>
     </div>
 </div>
 {% endblock %}

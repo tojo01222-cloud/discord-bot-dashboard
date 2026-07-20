@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}News{% endblock %}
 {% block content %}
-<a href="/" class="back-link">← Zurück</a>
-<h1>News</h1>
+<a href="/" class="back-link">← Back</a>
+<h1>{{ wt(site_lang, 'news_title') }}</h1>
 
 {% if not posts %}
-<p style="color:#9297ab;">Noch keine News.</p>
+<p style="color:#9297ab;">{{ wt(site_lang, 'news_empty') }}</p>
 {% else %}
 <div style="display:flex; flex-direction:column; gap:18px; margin-top:24px;">
     {% for post in posts %}

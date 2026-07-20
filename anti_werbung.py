@@ -68,6 +68,7 @@ DESIGNS = {
     "standard": {"color": discord.Color.blurple(), "emoji": "🎫"},
     "minimal": {"color": discord.Color.light_grey(), "emoji": "✉️"},
     "premium": {"color": discord.Color.gold(), "emoji": "⭐"},
+    "dark": {"color": discord.Color.from_rgb(30, 30, 40), "emoji": "🌑"},
 }
 
 
@@ -83,24 +84,25 @@ def _build_panel_embed(lang: str, design: str, categories: list[TicketCategory])
     style = DESIGNS.get(design, DESIGNS["standard"])
     embed = discord.Embed(
         title=f"{style['emoji']} {t('ticket.panel_title', lang)}",
-        description=t("ticket.panel_desc", lang),
+        description=f"{t('ticket.panel_desc', lang)}\n" + ("─" * 28),
         color=style["color"],
     )
     if categories:
-        lines = [f"{c.emoji} **{c.name}**" + (f" — {c.description}" if c.description else "")
+        lines = [f"{c.emoji} **{c.name}**" + (f"\n> {c.description}" if c.description else "")
                   for c in categories[:25]]
         embed.add_field(
-            name="Verfügbare Ticket-Arten" if lang == "de" else "Available ticket types",
+            name="📂 " + ("Verfügbare Ticket-Arten" if lang == "de" else "Available ticket types"),
             value="\n".join(lines),
             inline=False,
         )
     if design == "premium":
         embed.add_field(
-            name="Was dich erwartet" if lang == "de" else "What to expect",
+            name="✨ " + ("Was dich erwartet" if lang == "de" else "What to expect"),
             value="Ein privater Kanal nur für dich und unser Team." if lang == "de"
             else "A private channel just for you and our team.",
             inline=False,
         )
+    embed.set_footer(text="Support-Team" if lang == "de" else "Support Team")
     return embed
 
 

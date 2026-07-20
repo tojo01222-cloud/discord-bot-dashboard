@@ -72,6 +72,14 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "landing.html", {"user": None, "messages": []})
 
 
+@app.get("/set-site-language")
+async def set_site_language(request: Request, lang: str = "en", next: str = "/"):
+    if lang not in ("en", "de"):
+        lang = "en"
+    request.session["site_lang"] = lang
+    return RedirectResponse(next)
+
+
 @app.get("/news", response_class=HTMLResponse)
 async def news_page(request: Request):
     posts = await get_news_posts(published_only=True)
@@ -165,6 +173,11 @@ async def servers(request: Request):
             "icon": g.get("icon"),
             "bot_present": int(g["id"]) in bot_guild_ids,
         })
+
+    # Server, auf denen der Bot schon aktiv ist, ganz oben anzeigen -- die
+    # will man normalerweise zuerst sehen/verwalten, nicht erst die, wo man
+    # den Bot noch einladen müsste.
+    manageable.sort(key=lambda g: not g["bot_present"])
 
     invite_url = (
         f"https://discord.com/oauth2/authorize?client_id={cfg.DISCORD_CLIENT_ID}"

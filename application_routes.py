@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Deine Server — Bot Dashboard{% endblock %}
+{% block title %}{{ wt(site_lang, 'guilds_title') }} — Bot Dashboard{% endblock %}
 {% block content %}
-<h1>Deine Server</h1>
-<p>Server, auf denen du Admin-Rechte hast:</p>
+<h1>{{ wt(site_lang, 'guilds_title') }}</h1>
+<p>{{ wt(site_lang, 'guilds_subtitle') }}</p>
 
 <div class="guild-grid">
     {% for guild in manageable_guilds %}
@@ -14,13 +14,13 @@
         {% endif %}
         <span class="guild-name">{{ guild.name }}</span>
         {% if guild.bot_present %}
-        <a href="/dashboard/{{ guild.id }}" class="btn btn-small">Verwalten</a>
+        <a href="/dashboard/{{ guild.id }}" class="btn btn-small">{{ wt(site_lang, 'guilds_manage_btn') }}</a>
         {% else %}
-        <a href="{{ invite_url }}&guild_id={{ guild.id }}" target="_blank" class="btn btn-small btn-ghost">Bot einladen</a>
+        <a href="{{ invite_url }}&guild_id={{ guild.id }}" target="_blank" class="btn btn-small btn-ghost">{{ wt(site_lang, 'guilds_invite_btn') }}</a>
         {% endif %}
     </div>
     {% else %}
-    <p>Du hast auf keinem Server, den der Bot kennt oder auf dem du Admin bist, etwas zu verwalten.</p>
+    <p>{{ wt(site_lang, 'guilds_empty') }}</p>
     {% endfor %}
 </div>
 {% endblock %}
