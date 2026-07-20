@@ -1,205 +1,227 @@
 """
-Team-Management: Rang-Hierarchie einrichten, Uprank/Downrank, Teamkick, Teamliste.
+Einfaches DE/EN Sprachsystem. Jeder Server hat eine eigene Sprache
+(gespeichert in GuildSettings.language), der Bot-Owner setzt beim
+Hinzufügen des Bots einen Standardwert über DEFAULT_LANGUAGE in .env.
 
-Setup (/teamrank add) darf nur SERVER_ADMIN.
-Uprank/Downrank/Teamkick dürfen MODERATOR (anpassbar später übers Dashboard).
+Benutzung in einem Cog:
+    text = t("moderation.kick_success", lang, user=member.display_name)
 """
-import discord
-from discord import app_commands
-from discord.ext import commands
 
-from bot.utils.permissions import require_level, PermissionLevel
-from bot.utils.embeds import success_embed, error_embed, base_embed
-from bot.utils.i18n import t
-from bot.utils.db_helpers import (
-    get_guild_language,
-    get_team_ranks,
-    get_team_member,
-    get_all_team_members,
-    upsert_team_member,
-    remove_team_member,
-    log_punishment,
-)
-from bot.database.db import get_session
-from bot.database.models import TeamRank
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    "de": {
+        "no_permission": "❌ Du hast keine Berechtigung für diesen Befehl.",
+        "moderation.kick_success": "✅ {user} wurde gekickt.",
+        "moderation.ban_success": "✅ {user} wurde gebannt.",
+        "moderation.unban_success": "✅ {user_id} wurde entbannt.",
+        "moderation.timeout_success": "✅ {user} wurde für {duration} in Timeout gesetzt.",
+        "moderation.warn_added": "✅ {user} hat eine Verwarnung erhalten. (Grund: {reason})",
+        "moderation.warn_removed": "✅ Verwarnung #{id} wurde entfernt.",
+        "moderation.warn_none": "ℹ️ {user} hat keine aktiven Verwarnungen.",
+        "moderation.warn_list_title": "⚠️ Verwarnungen von {user}",
+        "moderation.cannot_moderate_self": "❌ Du kannst diesen Befehl nicht gegen dich selbst ausführen.",
+        "moderation.cannot_moderate_higher": "❌ Diese Person hat eine höhere oder gleiche Rolle wie du.",
+        "team.rank_added": "✅ Team-Rang {role} auf Position {position} hinzugefügt.",
+        "team.rank_removed": "✅ Team-Rang entfernt.",
+        "team.rank_list_title": "👥 Team-Ränge (niedrig → hoch)",
+        "team.rank_none": "ℹ️ Für diesen Server sind noch keine Team-Ränge eingerichtet. Nutze `/teamrank add`.",
+        "team.uprank_success": "⬆️ {user} wurde befördert zu **{rank}**.",
+        "team.downrank_success": "⬇️ {user} wurde zurückgestuft zu **{rank}**.",
+        "team.uprank_already_top": "❌ {user} hat bereits den höchsten Rang.",
+        "team.downrank_already_bottom": "❌ {user} hat bereits den niedrigsten Rang / ist nicht im Team.",
+        "team.not_in_team": "❌ {user} ist kein Teammitglied.",
+        "team.teamkick_success": "✅ {user} wurde aus dem Team entfernt. (Grund: {reason})",
+        "team.teamliste_title": "👥 Teamliste",
+        "team.teamliste_empty": "ℹ️ Das Team ist aktuell leer.",
+        "security.antinuke_enabled": "🛡️ Anti-Nuke ist jetzt **aktiviert**.",
+        "security.antinuke_disabled": "🛡️ Anti-Nuke ist jetzt **deaktiviert**.",
+        "security.antispam_enabled": "🛡️ Anti-Spam ist jetzt **aktiviert**.",
+        "security.antispam_disabled": "🛡️ Anti-Spam ist jetzt **deaktiviert**.",
+        "security.status_title": "🛡️ Sicherheitsstatus",
+        "security.trusted_added": "✅ {user} wurde zur Anti-Nuke-Whitelist hinzugefügt.",
+        "security.trusted_already": "ℹ️ {user} ist bereits auf der Whitelist.",
+        "security.trusted_removed": "✅ {user} wurde von der Anti-Nuke-Whitelist entfernt.",
+        "security.trusted_not_found": "❌ {user} war nicht auf der Whitelist.",
+        "security.trusted_list_title": "🛡️ Anti-Nuke-Whitelist",
+        "security.trusted_list_empty": "ℹ️ Die Whitelist ist leer.",
+        "security.nuke_alert_title": "🚨 Anti-Nuke ausgelöst",
+        "security.nuke_alert_desc": "{user} hat verdächtig viele destruktive Aktionen ausgeführt ({action}) und wurde automatisch eingeschränkt (alle Rollen entfernt).",
+        "security.spam_alert_desc": "{user} wurde wegen Spam automatisch in Timeout gesetzt.",
+        "help.title": "📖 Befehlsübersicht",
+        "serverinfo.title": "ℹ️ Server-Info",
+        "ticket.panel_title": "🎫 Support-Ticket",
+        "ticket.panel_desc": "Klicke auf den Button unten, um ein privates Ticket mit unserem Team zu öffnen.",
+        "ticket.button_create": "Ticket erstellen",
+        "ticket.already_open": "❌ Du hast bereits ein offenes Ticket: {channel}",
+        "ticket.created": "✅ Dein Ticket wurde erstellt: {channel}",
+        "ticket.welcome_title": "🎫 Willkommen, {user}!",
+        "ticket.welcome_desc": "Beschreibe kurz dein Anliegen, unser Team kümmert sich bald darum.",
+        "ticket.button_close": "Ticket schließen",
+        "ticket.closed": "🔒 Ticket wurde von {user} geschlossen.",
+        "ticket.not_a_ticket": "❌ Dies ist kein Ticket-Kanal.",
+        "ticket.category_set": "✅ Ticket-Kategorie gesetzt: {category}",
+        "ticket.select_placeholder": "Wähle eine Ticket-Art aus...",
+        "ticket.type_created": "✅ Ticket-Art **{name}** wurde erstellt.",
+        "ticket.type_exists": "❌ Es gibt bereits eine Ticket-Art mit diesem Namen.",
+        "ticket.type_removed": "✅ Ticket-Art **{name}** wurde entfernt.",
+        "ticket.type_not_found": "❌ Keine Ticket-Art mit diesem Namen gefunden.",
+        "ticket.type_updated": "✅ Ticket-Art **{name}** wurde aktualisiert.",
+        "ticket.type_list_title": "🎫 Ticket-Arten",
+        "ticket.type_list_empty": "ℹ️ Es sind noch keine Ticket-Arten eingerichtet. Nutze `/ticketart erstellen`, um verschiedene Ticket-Kategorien (z.B. Support, Bug-Report, Beschwerde) anzulegen — ohne welche zeigt das Panel nur einen einzelnen Ticket-Button.",
+        "ticket.deleted": "🗑️ Dieser Ticket-Kanal wird in 5 Sekunden gelöscht...",
+        "ticket.reopen_not_allowed": "❌ Dieses Ticket ist bereits geschlossen.",
+        "ticket.already_claimed": "❌ Dieses Ticket wird bereits von {user} bearbeitet.",
+        "ticket.claimed": "🙋 Ticket wird jetzt von {user} bearbeitet.",
+        "ticket.claimed_topic": "In Bearbeitung von {user}",
+        "warteraum.set": "✅ Warteraum eingerichtet: {voice} → Meldungen in {text}",
+        "warteraum.cleared": "✅ Warteraum-Einrichtung entfernt.",
+        "warteraum.notify": "🙋 **{user}** ist dem Warteraum {channel} beigetreten und braucht Hilfe!",
+        "warteraum.already_claimed": "❌ {user} kümmert sich bereits darum.",
+        "warteraum.claimed_button": "Wird betreut von {user}",
+        "warteraum.not_configured": "ℹ️ Es ist noch kein Warteraum eingerichtet. Nutze `/warteraum set`.",
+        "autorole.set": "✅ Autorole für **{target}** gesetzt: {role}",
+        "autorole.cleared": "✅ Autorole für **{target}** entfernt.",
+        "autorole.list_title": "🤖 Autorole-Einstellungen",
+        "autorole.list_empty": "ℹ️ Keine Autorole eingerichtet. Nutze `/autorole set`.",
+        "autorole.target_alle": "Alle (Menschen)",
+        "autorole.target_bots": "Bots/Apps",
+        "autorole.target_admins": "Administratoren",
+        "anti.enabled": "🛡️ {feature} ist jetzt **aktiviert**.",
+        "anti.disabled": "🛡️ {feature} ist jetzt **deaktiviert**.",
+        "anti.exempt_added": "✅ {target} wurde für {feature} ausgenommen.",
+        "anti.exempt_already": "ℹ️ {target} ist bereits für {feature} ausgenommen.",
+        "anti.exempt_removed": "✅ {target} wurde von der {feature}-Ausnahmeliste entfernt.",
+        "anti.exempt_not_found": "❌ {target} war nicht auf der {feature}-Ausnahmeliste.",
+        "anti.exempt_list_title": "🛡️ {feature}-Ausnahmeliste",
+        "anti.exempt_list_empty": "ℹ️ Die {feature}-Ausnahmeliste ist leer.",
+        "antihack.kicked_dm": "Du wurdest von **{guild}** automatisch entfernt: unser Anti-Hack-System hat verdächtiges Verhalten erkannt (derselbe Inhalt wurde sehr schnell in mehreren Kanälen gepostet), typisch für gekaperte Accounts. Falls das ein Irrtum war, melde dich beim Server-Team.",
+        "antihack.alert": "🚨 Anti-Hack ausgelöst: {user} hat denselben Inhalt in {count} Kanälen innerhalb kurzer Zeit gepostet und wurde automatisch gekickt (vermutlich gekaperter Account).",
+        "antiwerbung.deleted_dm": "Deine Nachricht in **{guild}** wurde gelöscht: Links zu posten ist dir nicht erlaubt. Das war Verstoß Nr. {count} — {consequence}",
+        "antiwerbung.consequence_1": "Konsequenz: 1 Stunde Timeout.",
+        "antiwerbung.consequence_2": "Konsequenz: 1 Tag Timeout.",
+        "antiwerbung.consequence_3": "Konsequenz: 7 Tage Timeout.",
+        "antiwerbung.consequence_4": "Konsequenz: Du wurdest vom Server gekickt.",
+        "antiwerbung.alert": "🔗 Anti-Werbung: {user} hat einen unautorisierten Link gepostet (Verstoß Nr. {count}) — {consequence}",
+        "strafregister.title": "📁 Strafregister von {user}",
+        "strafregister.empty": "ℹ️ {user} hat keine Einträge im Strafregister.",
+        "strafregister.no_access": "❌ Du hast keine Berechtigung, das Strafregister einzusehen.",
+        "strafregister.access_granted": "✅ Rolle {role} kann jetzt das Strafregister einsehen.",
+        "strafregister.access_already": "ℹ️ Rolle {role} hatte bereits Zugriff.",
+        "strafregister.access_revoked": "✅ Rolle {role} kann das Strafregister nicht mehr einsehen.",
+        "strafregister.access_not_found": "❌ Rolle {role} hatte keinen Zugriff.",
+        "strafregister.access_list_title": "📁 Rollen mit Strafregister-Zugriff",
+        "strafregister.access_list_empty": "ℹ️ Keine zusätzlichen Rollen mit Strafregister-Zugriff (nur Team/Moderator/Admin).",
+        "language.set": "✅ Sprache auf **{language}** gestellt. Alle Bot-Nachrichten erscheinen jetzt in dieser Sprache.",
+        "language.refreshed": "🔄 Sprache aktualisiert und Befehle für diesen Server neu synchronisiert.",
+    },
+    "en": {
+        "no_permission": "❌ You don't have permission to use this command.",
+        "moderation.kick_success": "✅ {user} was kicked.",
+        "moderation.ban_success": "✅ {user} was banned.",
+        "moderation.unban_success": "✅ {user_id} was unbanned.",
+        "moderation.timeout_success": "✅ {user} was timed out for {duration}.",
+        "moderation.warn_added": "✅ {user} received a warning. (Reason: {reason})",
+        "moderation.warn_removed": "✅ Warning #{id} was removed.",
+        "moderation.warn_none": "ℹ️ {user} has no active warnings.",
+        "moderation.warn_list_title": "⚠️ Warnings for {user}",
+        "moderation.cannot_moderate_self": "❌ You can't use this command on yourself.",
+        "moderation.cannot_moderate_higher": "❌ That person has an equal or higher role than you.",
+        "team.rank_added": "✅ Team rank {role} added at position {position}.",
+        "team.rank_removed": "✅ Team rank removed.",
+        "team.rank_list_title": "👥 Team ranks (low → high)",
+        "team.rank_none": "ℹ️ No team ranks set up yet for this server. Use `/teamrank add`.",
+        "team.uprank_success": "⬆️ {user} was promoted to **{rank}**.",
+        "team.downrank_success": "⬇️ {user} was demoted to **{rank}**.",
+        "team.uprank_already_top": "❌ {user} already has the highest rank.",
+        "team.downrank_already_bottom": "❌ {user} already has the lowest rank / isn't on the team.",
+        "team.not_in_team": "❌ {user} is not a team member.",
+        "team.teamkick_success": "✅ {user} was removed from the team. (Reason: {reason})",
+        "team.teamliste_title": "👥 Team list",
+        "team.teamliste_empty": "ℹ️ The team is currently empty.",
+        "security.antinuke_enabled": "🛡️ Anti-Nuke is now **enabled**.",
+        "security.antinuke_disabled": "🛡️ Anti-Nuke is now **disabled**.",
+        "security.antispam_enabled": "🛡️ Anti-Spam is now **enabled**.",
+        "security.antispam_disabled": "🛡️ Anti-Spam is now **disabled**.",
+        "security.status_title": "🛡️ Security status",
+        "security.trusted_added": "✅ {user} was added to the anti-nuke whitelist.",
+        "security.trusted_already": "ℹ️ {user} is already on the whitelist.",
+        "security.trusted_removed": "✅ {user} was removed from the anti-nuke whitelist.",
+        "security.trusted_not_found": "❌ {user} was not on the whitelist.",
+        "security.trusted_list_title": "🛡️ Anti-nuke whitelist",
+        "security.trusted_list_empty": "ℹ️ The whitelist is empty.",
+        "security.nuke_alert_title": "🚨 Anti-nuke triggered",
+        "security.nuke_alert_desc": "{user} performed a suspicious number of destructive actions ({action}) and was automatically restricted (all roles removed).",
+        "security.spam_alert_desc": "{user} was automatically timed out for spamming.",
+        "help.title": "📖 Command Overview",
+        "serverinfo.title": "ℹ️ Server Info",
+        "ticket.panel_title": "🎫 Support Ticket",
+        "ticket.panel_desc": "Click the button below to open a private ticket with our team.",
+        "ticket.button_create": "Create Ticket",
+        "ticket.already_open": "❌ You already have an open ticket: {channel}",
+        "ticket.created": "✅ Your ticket has been created: {channel}",
+        "ticket.welcome_title": "🎫 Welcome, {user}!",
+        "ticket.welcome_desc": "Briefly describe your issue, our team will get to it soon.",
+        "ticket.button_close": "Close Ticket",
+        "ticket.closed": "🔒 Ticket closed by {user}.",
+        "ticket.not_a_ticket": "❌ This is not a ticket channel.",
+        "ticket.category_set": "✅ Ticket category set: {category}",
+        "ticket.select_placeholder": "Choose a ticket type...",
+        "ticket.type_created": "✅ Ticket type **{name}** was created.",
+        "ticket.type_exists": "❌ A ticket type with that name already exists.",
+        "ticket.type_removed": "✅ Ticket type **{name}** was removed.",
+        "ticket.type_not_found": "❌ No ticket type found with that name.",
+        "ticket.type_updated": "✅ Ticket type **{name}** was updated.",
+        "ticket.type_list_title": "🎫 Ticket types",
+        "ticket.type_list_empty": "ℹ️ No ticket types set up yet. Use `/ticketart erstellen` to create different ticket categories (e.g. Support, Bug Report, Complaint) — without any, the panel just shows a single ticket button.",
+        "ticket.deleted": "🗑️ This ticket channel will be deleted in 5 seconds...",
+        "ticket.reopen_not_allowed": "❌ This ticket is already closed.",
+        "ticket.already_claimed": "❌ This ticket is already being handled by {user}.",
+        "ticket.claimed": "🙋 Ticket is now being handled by {user}.",
+        "ticket.claimed_topic": "Being handled by {user}",
+        "warteraum.set": "✅ Waiting room set up: {voice} → notifications in {text}",
+        "warteraum.cleared": "✅ Waiting room configuration removed.",
+        "warteraum.notify": "🙋 **{user}** joined the waiting room {channel} and needs help!",
+        "warteraum.already_claimed": "❌ {user} is already handling this.",
+        "warteraum.claimed_button": "Being handled by {user}",
+        "warteraum.not_configured": "ℹ️ No waiting room configured yet. Use `/warteraum set`.",
+        "autorole.set": "✅ Autorole for **{target}** set: {role}",
+        "autorole.cleared": "✅ Autorole for **{target}** removed.",
+        "autorole.list_title": "🤖 Autorole settings",
+        "autorole.list_empty": "ℹ️ No autorole configured. Use `/autorole set`.",
+        "autorole.target_alle": "Everyone (humans)",
+        "autorole.target_bots": "Bots/apps",
+        "autorole.target_admins": "Administrators",
+        "anti.enabled": "🛡️ {feature} is now **enabled**.",
+        "anti.disabled": "🛡️ {feature} is now **disabled**.",
+        "anti.exempt_added": "✅ {target} was exempted from {feature}.",
+        "anti.exempt_already": "ℹ️ {target} is already exempt from {feature}.",
+        "anti.exempt_removed": "✅ {target} was removed from the {feature} exemption list.",
+        "anti.exempt_not_found": "❌ {target} was not on the {feature} exemption list.",
+        "anti.exempt_list_title": "🛡️ {feature} exemption list",
+        "anti.exempt_list_empty": "ℹ️ The {feature} exemption list is empty.",
+        "antihack.kicked_dm": "You were automatically removed from **{guild}**: our anti-hack system detected suspicious behavior (the same content posted very quickly across multiple channels), typical of compromised accounts. If this was a mistake, please contact the server team.",
+        "antihack.alert": "🚨 Anti-hack triggered: {user} posted the same content in {count} channels within a short time and was automatically kicked (likely a compromised account).",
+        "antiwerbung.deleted_dm": "Your message in **{guild}** was deleted: you're not allowed to post links. This was violation #{count} — {consequence}",
+        "antiwerbung.consequence_1": "Consequence: 1 hour timeout.",
+        "antiwerbung.consequence_2": "Consequence: 1 day timeout.",
+        "antiwerbung.consequence_3": "Consequence: 7 day timeout.",
+        "antiwerbung.consequence_4": "Consequence: you were kicked from the server.",
+        "antiwerbung.alert": "🔗 Anti-advertising: {user} posted an unauthorized link (violation #{count}) — {consequence}",
+        "strafregister.title": "📁 Punishment record for {user}",
+        "strafregister.empty": "ℹ️ {user} has no entries in the punishment record.",
+        "strafregister.no_access": "❌ You don't have permission to view the punishment record.",
+        "strafregister.access_granted": "✅ Role {role} can now view the punishment record.",
+        "strafregister.access_already": "ℹ️ Role {role} already had access.",
+        "strafregister.access_revoked": "✅ Role {role} can no longer view the punishment record.",
+        "strafregister.access_not_found": "❌ Role {role} didn't have access.",
+        "strafregister.access_list_title": "📁 Roles with punishment record access",
+        "strafregister.access_list_empty": "ℹ️ No additional roles with access (only team/moderator/admin).",
+        "language.set": "✅ Language set to **{language}**. All bot messages now appear in this language.",
+        "language.refreshed": "🔄 Language refreshed and commands re-synced for this server.",
+    },
+}
 
 
-class TeamManagement(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    # ---------- TEAMRANK (Setup-Gruppe) ----------
-    @commands.hybrid_group(name="teamrank", description="Team-Rang-Hierarchie einrichten (nur Server-Admin).")
-    @commands.guild_only()
-    async def teamrank(self, ctx: commands.Context):
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
-
-    @teamrank.command(name="add", description="Fügt eine Rolle als Team-Rang hinzu (am Ende der Hierarchie).")
-    @app_commands.describe(role="Die Discord-Rolle, die als Team-Rang gelten soll")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def teamrank_add(self, ctx: commands.Context, role: discord.Role):
-        lang = await get_guild_language(ctx.guild.id)
-        existing = await get_team_ranks(ctx.guild.id)
-        next_position = max((r.position for r in existing), default=-1) + 1
-
-        async with get_session() as session:
-            session.add(TeamRank(guild_id=ctx.guild.id, role_id=role.id, position=next_position))
-            await session.commit()
-
-        await ctx.send(embed=success_embed(t("team.rank_added", lang, role=role.mention, position=next_position)))
-
-    @teamrank.command(name="list", description="Zeigt die Team-Rang-Hierarchie (niedrig -> hoch).")
-    async def teamrank_list(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        ranks = await get_team_ranks(ctx.guild.id)
-        if not ranks:
-            await ctx.send(embed=error_embed(t("team.rank_none", lang)))
-            return
-
-        embed = base_embed(t("team.rank_list_title", lang))
-        lines = []
-        for rank in ranks:
-            role = ctx.guild.get_role(rank.role_id)
-            role_display = role.mention if role else f"(gelöschte Rolle: {rank.role_id})"
-            lines.append(f"**{rank.position}.** {role_display}")
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @teamrank.command(name="remove", description="Entfernt eine Rolle aus der Team-Rang-Hierarchie.")
-    @app_commands.describe(role="Die zu entfernende Team-Rang-Rolle")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def teamrank_remove(self, ctx: commands.Context, role: discord.Role):
-        lang = await get_guild_language(ctx.guild.id)
-        async with get_session() as session:
-            ranks = await get_team_ranks(ctx.guild.id)
-            match = next((r for r in ranks if r.role_id == role.id), None)
-            if match is None:
-                await ctx.send(embed=error_embed("Diese Rolle ist kein Team-Rang." if lang == "de"
-                                                  else "That role is not a team rank."))
-                return
-            obj = await session.get(TeamRank, match.id)
-            await session.delete(obj)
-            await session.commit()
-        await ctx.send(embed=success_embed(t("team.rank_removed", lang)))
-
-    # ---------- UPRANK ----------
-    @commands.hybrid_command(name="uprank", description="Befördert ein Teammitglied zum nächsthöheren Rang.")
-    @app_commands.describe(member="Das Teammitglied")
-    @commands.guild_only()
-    @require_level(PermissionLevel.MODERATOR)
-    async def uprank(self, ctx: commands.Context, member: discord.Member):
-        lang = await get_guild_language(ctx.guild.id)
-        ranks = await get_team_ranks(ctx.guild.id)
-        if not ranks:
-            await ctx.send(embed=error_embed(t("team.rank_none", lang)))
-            return
-
-        team_member = await get_team_member(ctx.guild.id, member.id)
-        current_position = -1
-        if team_member and team_member.current_rank_id:
-            current = next((r for r in ranks if r.id == team_member.current_rank_id), None)
-            if current:
-                current_position = current.position
-
-        next_rank = next((r for r in ranks if r.position == current_position + 1), None)
-        if next_rank is None:
-            await ctx.send(embed=error_embed(t("team.uprank_already_top", lang, user=member.mention)))
-            return
-
-        new_role = ctx.guild.get_role(next_rank.role_id)
-        old_role = None
-        if team_member and team_member.current_rank_id:
-            old_rank = next((r for r in ranks if r.id == team_member.current_rank_id), None)
-            old_role = ctx.guild.get_role(old_rank.role_id) if old_rank else None
-
-        if new_role:
-            await member.add_roles(new_role, reason=f"Uprank durch {ctx.author}")
-        if old_role and old_role in member.roles:
-            await member.remove_roles(old_role, reason=f"Uprank durch {ctx.author}")
-
-        await upsert_team_member(ctx.guild.id, member.id, next_rank.id)
-        await ctx.send(embed=success_embed(
-            t("team.uprank_success", lang, user=member.mention, rank=new_role.name if new_role else "?")))
-
-    # ---------- DOWNRANK ----------
-    @commands.hybrid_command(name="downrank", description="Stuft ein Teammitglied einen Rang zurück.")
-    @app_commands.describe(member="Das Teammitglied")
-    @commands.guild_only()
-    @require_level(PermissionLevel.MODERATOR)
-    async def downrank(self, ctx: commands.Context, member: discord.Member):
-        lang = await get_guild_language(ctx.guild.id)
-        ranks = await get_team_ranks(ctx.guild.id)
-        team_member = await get_team_member(ctx.guild.id, member.id)
-
-        if not team_member or not team_member.current_rank_id:
-            await ctx.send(embed=error_embed(t("team.not_in_team", lang, user=member.mention)))
-            return
-
-        current = next((r for r in ranks if r.id == team_member.current_rank_id), None)
-        if current is None or current.position == 0:
-            await ctx.send(embed=error_embed(t("team.downrank_already_bottom", lang, user=member.mention)))
-            return
-
-        prev_rank = next((r for r in ranks if r.position == current.position - 1), None)
-        old_role = ctx.guild.get_role(current.role_id)
-        new_role = ctx.guild.get_role(prev_rank.role_id) if prev_rank else None
-
-        if old_role and old_role in member.roles:
-            await member.remove_roles(old_role, reason=f"Downrank durch {ctx.author}")
-        if new_role:
-            await member.add_roles(new_role, reason=f"Downrank durch {ctx.author}")
-
-        await upsert_team_member(ctx.guild.id, member.id, prev_rank.id if prev_rank else None)
-        await ctx.send(embed=success_embed(
-            t("team.downrank_success", lang, user=member.mention, rank=new_role.name if new_role else "—")))
-
-    # ---------- TEAMKICK ----------
-    @commands.hybrid_command(name="teamkick", description="Entfernt ein Mitglied aus dem Team (alle Team-Rollen).")
-    @app_commands.describe(member="Das Teammitglied", reason="Grund")
-    @commands.guild_only()
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def teamkick(self, ctx: commands.Context, member: discord.Member, *, reason: str):
-        lang = await get_guild_language(ctx.guild.id)
-        ranks = await get_team_ranks(ctx.guild.id)
-        team_role_ids = {r.role_id for r in ranks}
-
-        roles_to_remove = [role for role in member.roles if role.id in team_role_ids]
-        if roles_to_remove:
-            await member.remove_roles(*roles_to_remove, reason=f"Teamkick: {reason} | {ctx.author}")
-
-        await remove_team_member(ctx.guild.id, member.id)
-        await log_punishment(ctx.guild.id, member.id, ctx.author.id, "team_kick", reason, is_team_punishment=True)
-        await ctx.send(embed=success_embed(t("team.teamkick_success", lang, user=member.mention, reason=reason)))
-
-    # ---------- TEAMLISTE ----------
-    @commands.hybrid_command(name="teamliste", description="Zeigt alle aktuellen Teammitglieder mit Rang.")
-    @commands.guild_only()
-    async def teamliste(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        members = await get_all_team_members(ctx.guild.id)
-        ranks = {r.id: r for r in await get_team_ranks(ctx.guild.id)}
-
-        if not members:
-            await ctx.send(embed=error_embed(t("team.teamliste_empty", lang)))
-            return
-
-        embed = base_embed(t("team.teamliste_title", lang))
-        # Nach Rang-Position gruppieren, höchster zuerst
-        sorted_members = sorted(
-            members,
-            key=lambda m: ranks[m.current_rank_id].position if m.current_rank_id in ranks else -1,
-            reverse=True,
-        )
-        lines = []
-        for m in sorted_members:
-            rank = ranks.get(m.current_rank_id)
-            role = ctx.guild.get_role(rank.role_id) if rank else None
-            rank_name = role.name if role else "—"
-            lines.append(f"<@{m.user_id}> — **{rank_name}**")
-        embed.description = "\n".join(lines[:50])  # Discord Embed-Limit im Blick behalten
-        await ctx.send(embed=embed)
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(TeamManagement(bot))
+def t(key: str, lang: str = "de", **kwargs) -> str:
+    lang = lang if lang in TRANSLATIONS else "de"
+    template = TRANSLATIONS[lang].get(key) or TRANSLATIONS["de"].get(key, key)
+    return template.format(**kwargs) if kwargs else template

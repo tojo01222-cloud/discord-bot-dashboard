@@ -1,13 +1,24 @@
-{% extends "admin_base.html" %}
-{% block title %}System — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Strafverzeichnis — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>System-Info</h1>
-<div class="admin-card">
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Strafverzeichnis — {{ guild.name }}</h1>
+
+{% if not punishments %}
+<p style="color:#9297ab;">Keine aktiven Strafen.</p>
+{% else %}
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
     <table class="admin-table">
-        <tr><th>Python-Version</th><td>{{ system_info.python_version }}</td></tr>
-        <tr><th>Plattform</th><td>{{ system_info.platform }}</td></tr>
-        <tr><th>Datenbank</th><td>{{ "Erreichbar" if system_info.database_ok else "Nicht erreichbar" }}</td></tr>
-        <tr><th>Wartungsmodus</th><td>{{ "Aktiv" if system_info.maintenance_mode else "Inaktiv" }}</td></tr>
+        <tr><th>Typ</th><th>User</th><th>Grund</th><th>Datum</th></tr>
+        {% for p in punishments %}
+        <tr>
+            <td>{{ p.type }}</td>
+            <td>{{ p.user_id }}</td>
+            <td>{{ p.reason }}</td>
+            <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
     </table>
 </div>
+{% endif %}
 {% endblock %}

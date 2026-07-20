@@ -1,67 +1,229 @@
-{% extends "admin_base.html" %}
-{% block title %}Rechteverwaltung — Admin-Panel{% endblock %}
-{% block content %}
-<h1>Rechteverwaltung</h1>
+"""
+Aufrufe an die Discord-API mit dem BOT-Token (nicht dem User-OAuth-Token aus
+discord_oauth.py). Wird gebraucht, um z.B. die Textkanäle eines Servers für
+die Einstellungen-Dropdowns zu laden — das kann der User-Token nicht, dafür
+braucht es die Bot-Berechtigungen.
+"""
+import os
 
-<a href="/admin/groups" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">Berechtigungsgruppen verwalten</a>
+import httpx
 
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Neuen Admin-Account anlegen</h2>
-    <form method="post" action="/admin/create-admin" class="admin-form">
-        <div>
-            <label for="new_username">Benutzername</label>
-            <input type="text" id="new_username" name="username" required>
-        </div>
-        <div>
-            <label for="new_password">Passwort</label>
-            <input type="password" id="new_password" name="password" required>
-        </div>
-        <button type="submit" class="btn btn-small">Account anlegen</button>
-    </form>
-</div>
+from dashboard.backend.config import dashboard_config as cfg
 
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Bestehende Admins</h2>
-    {% for entry in admins_with_perms %}
-    <div style="padding:14px 0; border-bottom:1px solid #262838;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <strong>{{ entry.user.username }}</strong>
-                {% if entry.user.last_login_at %}
-                <span style="color:#9297ab; font-size:12px;"> — letzter Login: {{ entry.user.last_login_at.strftime('%d.%m.%Y %H:%M') }}</span>
-                {% endif %}
-            </div>
-            {% if not entry.user.is_superadmin %}
-            <form method="post" action="/admin/permissions/{{ entry.user.id }}/delete"
-                  onsubmit="return confirm('Diesen Admin-Account wirklich löschen?');">
-                <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-            </form>
-            {% endif %}
-        </div>
-        {% if entry.user.is_superadmin %}
-        <span class="perm-tag perm-tag-on">Superadmin (alle Rechte)</span>
-        {% else %}
-        {% if entry.groups %}
-        <div style="margin-top:8px; font-size:12px; color:#9297ab;">
-            Gruppen: {% for g in entry.groups %}{{ g.name }}{% if not loop.last %}, {% endif %}{% endfor %}
-        </div>
-        {% endif %}
-        <div style="margin-top:8px;">
-            {% for perm in all_permissions %}
-            <form method="post" action="/admin/permissions/{{ entry.user.id }}/toggle" style="display:inline;">
-                <input type="hidden" name="permission_key" value="{{ perm }}">
-                {% if perm in entry.permissions %}
-                <input type="hidden" name="action" value="revoke">
-                <button type="submit" class="perm-tag perm-tag-on" style="border:none; cursor:pointer;">{{ perm }} (aktiv)</button>
-                {% else %}
-                <input type="hidden" name="action" value="grant">
-                <button type="submit" class="perm-tag perm-tag-off" style="border:none; cursor:pointer;">{{ perm }}</button>
-                {% endif %}
-            </form>
-            {% endfor %}
-        </div>
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
-{% endblock %}
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
+
+TEXT_CHANNEL_TYPE = 0  # Discord Channel-Type-ID für normale Textkanäle
+VOICE_CHANNEL_TYPE = 2
+CATEGORY_CHANNEL_TYPE = 4
+
+
+async def fetch_guild_text_channels(guild_id: int) -> list[dict]:
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/channels", headers=headers)
+        if resp.status_code != 200:
+            return []
+        channels = resp.json()
+        return [c for c in channels if c.get("type") == TEXT_CHANNEL_TYPE]
+
+
+async def fetch_guild_voice_channels(guild_id: int) -> list[dict]:
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/channels", headers=headers)
+        if resp.status_code != 200:
+            return []
+        channels = resp.json()
+        return [c for c in channels if c.get("type") == VOICE_CHANNEL_TYPE]
+
+
+async def fetch_guild_categories(guild_id: int) -> list[dict]:
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/channels", headers=headers)
+        if resp.status_code != 200:
+            return []
+        channels = resp.json()
+        return [c for c in channels if c.get("type") == CATEGORY_CHANNEL_TYPE]
+
+
+async def fetch_guild_roles(guild_id: int) -> list[dict]:
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/roles", headers=headers)
+        if resp.status_code != 200:
+            return []
+        roles = resp.json()
+        # @everyone-Rolle (id == guild_id) und Bot-eigene Rollen rausfiltern -- ergibt keinen Sinn als Autorole
+        return [r for r in roles if r["id"] != str(guild_id) and not r.get("managed")]
+
+
+async def send_channel_message(channel_id: int, content: str) -> bool:
+    """Sendet eine Nachricht über den BOT-Token in einen Kanal (fürs Admin-Panel:
+    globale Ankündigungen). Gibt True/False zurück, ob es geklappt hat."""
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages",
+            headers=headers, json={"content": content},
+        )
+        return resp.status_code == 200
+
+
+async def create_guild_invite(guild_id: int) -> str | None:
+    """Erzeugt einen Einladungslink für einen Server, über den ersten
+    erreichbaren Textkanal (fürs Admin-Panel: Server-Übersicht)."""
+    channels = await fetch_guild_text_channels(guild_id)
+    if not channels:
+        return None
+    channel_id = channels[0]["id"]
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/invites",
+            headers=headers, json={"max_age": 86400, "max_uses": 0},
+        )
+        if resp.status_code != 200:
+            return None
+        code = resp.json().get("code")
+        return f"https://discord.gg/{code}" if code else None
+
+
+async def leave_guild(guild_id: int) -> bool:
+    """Lässt den Bot einen Server verlassen (Admin-Panel-Funktion)."""
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.delete(f"{cfg.DISCORD_API_BASE}/users/@me/guilds/{guild_id}", headers=headers)
+        return resp.status_code in (200, 204)
+
+
+async def kick_member(guild_id: int, user_id: int, reason: str) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "X-Audit-Log-Reason": reason[:400]}
+    async with httpx.AsyncClient() as client:
+        resp = await client.delete(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}", headers=headers)
+        return resp.status_code in (200, 204)
+
+
+async def ban_member(guild_id: int, user_id: int, reason: str) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "X-Audit-Log-Reason": reason[:400]}
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/bans/{user_id}", headers=headers, json={},
+        )
+        return resp.status_code in (200, 204)
+
+
+async def fetch_guild_members(guild_id: int, limit: int = 1000) -> list[dict]:
+    """Holt ALLE Mitglieder eines Servers (paginiert, Discord liefert max.
+    1000 pro Aufruf) -- fürs Dashboard-"Autorole an alle vergeben"."""
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    members: list[dict] = []
+    after = "0"
+    async with httpx.AsyncClient() as client:
+        while True:
+            resp = await client.get(
+                f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members",
+                headers=headers, params={"limit": 1000, "after": after},
+            )
+            if resp.status_code != 200:
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            members.extend(batch)
+            if len(batch) < 1000 or len(members) >= limit:
+                break
+            after = batch[-1]["user"]["id"]
+    return members
+
+
+async def add_role_to_member(guild_id: int, user_id: int, role_id: int, reason: str = "") -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "X-Audit-Log-Reason": reason[:400]}
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}/roles/{role_id}", headers=headers,
+        )
+        return resp.status_code in (200, 204)
+
+
+async def set_channel_slowmode(channel_id: int, seconds: int) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers,
+            json={"rate_limit_per_user": seconds},
+        )
+        return resp.status_code == 200
+
+
+async def set_channel_lock(guild_id: int, channel_id: int, locked: bool) -> bool:
+    """Sperrt/entsperrt einen Kanal für @everyone (send_messages=False bzw.
+    zurück auf Server-Standard). WICHTIG: die Discord-API ersetzt bei einem
+    PUT die KOMPLETTE Berechtigung für ein Ziel, nicht nur ein einzelnes Bit
+    -- deshalb erst die bestehenden allow/deny-Werte abfragen und nur das
+    SEND_MESSAGES-Bit (1<<11) gezielt ändern, statt versehentlich alle
+    anderen bereits gesetzten Berechtigungen für @everyone zu löschen."""
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    send_messages_bit = 1 << 11
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers)
+        if resp.status_code != 200:
+            return False
+        channel_data = resp.json()
+
+        existing_allow, existing_deny = 0, 0
+        for overwrite in channel_data.get("permission_overwrites", []):
+            if overwrite.get("id") == str(guild_id) and overwrite.get("type") == 0:
+                existing_allow = int(overwrite.get("allow", 0))
+                existing_deny = int(overwrite.get("deny", 0))
+                break
+
+        if locked:
+            new_deny = existing_deny | send_messages_bit
+            new_allow = existing_allow & ~send_messages_bit
+        else:
+            new_deny = existing_deny & ~send_messages_bit
+            new_allow = existing_allow  # nicht explizit erlauben, nur die Sperre aufheben
+
+        put_resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/permissions/{guild_id}",
+            headers=headers, json={"allow": str(new_allow), "deny": str(new_deny), "type": 0},
+        )
+        return put_resp.status_code in (200, 204)
+
+
+async def set_member_nickname(guild_id: int, user_id: int, nickname: str) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}", headers=headers,
+            json={"nick": nickname or None},
+        )
+        return resp.status_code == 200

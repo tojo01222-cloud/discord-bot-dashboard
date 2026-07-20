@@ -1,43 +1,14 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin-Panel{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <div class="admin-layout">
-        <nav class="admin-sidebar">
-            <div class="admin-brand">🛡️ Admin-Panel</div>
-            <a href="/admin">📊 Übersicht</a>
-            <a href="/admin/stats">📈 Statistiken</a>
-            <a href="/admin/servers">🌐 Server</a>
-            <a href="/admin/broadcast">📢 Ankündigungen</a>
-            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
-            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
-            <a href="/admin/users">👥 Dashboard-User</a>
-            {% if admin and admin.is_superadmin %}
-            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
-            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
-            {% endif %}
-            <a href="/admin/system">💻 System</a>
-            <a href="/admin/account">👤 Mein Account</a>
-            <div class="admin-sidebar-footer">
-                <span>{{ admin.username if admin }}</span>
-                {% if operator_invite %}
-                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
-                {% endif %}
-                <a href="/admin/logout">Logout</a>
-            </div>
-        </nav>
-        <main class="admin-content">
-            {% for message in messages %}
-            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
-            {% endfor %}
-            {% block content %}{% endblock %}
-        </main>
-    </div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Login — Bot Dashboard{% endblock %}
+{% block content %}
+<div class="login-box">
+    <h1>Willkommen </h1>
+    <p>Melde dich mit deinem Discord-Account an, um deine Server zu verwalten.</p>
+    <a href="/login" class="btn btn-discord">Mit Discord anmelden</a>
+    <p class="small-print">
+        Beim Login werden dein Discord-Name, dein Avatar und deine Server-Mitgliedschaften
+        gespeichert, damit wir dir die richtigen Server anzeigen können. Details siehe
+        <a href="/datenschutz" style="color:#9297ab;">Datenschutzerklärung</a>.
+    </p>
+</div>
+{% endblock %}

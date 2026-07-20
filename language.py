@@ -1,160 +1,169 @@
 """
-Invite-Tracking.
+Warteraum-System.
 
-- /invites [user]        -- zeigt, wie viele echte Einladungen ein User hat
-- /inviteleaderboard      -- Top 10 Einlader des Servers
-- /invitestats [user]     -- detaillierte Statistik (echt/fake/gesamt) eines Users
+- /warteraum set <voice-kanal> <text-kanal>   -- legt Warteraum + Melde-Kanal fest (SERVER_ADMIN)
+- /warteraum clear                             -- hebt die Einrichtung auf (SERVER_ADMIN)
+- /warteraum status                            -- zeigt die aktuelle Einrichtung
 
-Funktionsweise: Discord liefert keinen direkten "dieser Link wurde benutzt"-
-Event beim Member-Beitritt. Stattdessen wird bei jedem Beitritt die aktuelle
-Nutzungszahl (uses) aller Server-Invites mit dem zuletzt gespeicherten Stand
-verglichen -- welcher Invite genau um 1 gestiegen ist, war der benutzte.
+Sobald jemand dem konfigurierten Sprachkanal (Warteraum) beitritt, sendet der
+Bot automatisch eine Nachricht in den festgelegten Textkanal, dass diese
+Person Hilfe braucht -- wie ursprünglich gewünscht. Ein Team-Mitglied kann
+sich über den Button "Ich kümmere mich darum" als zuständig markieren, damit
+nicht mehrere gleichzeitig antworten.
 
-Fake-Erkennung (einfache Heuristik, keine Garantie): ein Account, der zum
-Zeitpunkt des Beitritts jünger als 7 Tage ist, gilt als potenziell "fake"
-und zählt nicht zu den echten Einladungen.
+Bug-Fix: vorher löste JEDER Beitritt sofort eine Meldung aus -- wer schnell
+den Kanal verlässt und wieder betritt (oder zwischen zwei Warteräumen hin-
+und herwechselt), erzeugte Spam im Melde-Kanal. Jetzt gibt es einen kurzen
+Cooldown pro User.
 """
-import datetime as dt
-import logging
+import time
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.embeds import base_embed, error_embed
-from bot.utils.db_helpers import (
-    get_guild_language,
-    get_invite_records,
-    upsert_invite_record,
-    remove_invite_record,
-    record_invite_join,
-    get_invite_count,
-    get_invite_leaderboard,
-    get_invite_stats,
-)
+from bot.utils.permissions import require_level, PermissionLevel, get_member_permission_level
+from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.i18n import t
+from bot.utils.db_helpers import get_guild_language, get_or_create_guild_settings, get_guild_settings_snapshot
+from bot.database.db import get_session
 
-log = logging.getLogger("bot.cogs.invites")
+NOTIFY_COOLDOWN_SECONDS = 30
 
-FAKE_ACCOUNT_AGE_DAYS = 7
+# In-Memory-Cache (guild_id, user_id) -> Zeitstempel der letzten Meldung.
+# Verhindert Spam im Melde-Kanal bei schnellem Verlassen/erneutem Beitreten.
+_last_notify_time: dict[tuple[int, int], float] = {}
 
 
-class Invites(commands.Cog):
+class WaitingRoomAckView(discord.ui.View):
+    """Nicht-persistenter View (bewusst kein bot.add_view() nötig -- eine
+    Warteraum-Meldung ist von Natur aus kurzlebig; nach einem Bot-Neustart
+    ist der Button einfach nicht mehr klickbar, was für diesen Anwendungsfall
+    unkritisch ist)."""
+
+    def __init__(self, lang: str):
+        super().__init__(timeout=1800)  # 30 Minuten, danach automatisch deaktiviert
+        self.lang = lang
+        self.claimed_by: int | None = None
+
+    @discord.ui.button(label="Ich kümmere mich darum", emoji="🙋", style=discord.ButtonStyle.primary)
+    async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if get_member_permission_level(interaction.user) < PermissionLevel.TEAM:
+            await interaction.response.send_message(embed=error_embed(t("no_permission", self.lang)), ephemeral=True)
+            return
+        if self.claimed_by:
+            await interaction.response.send_message(
+                embed=error_embed(t("warteraum.already_claimed", self.lang, user=f"<@{self.claimed_by}>")),
+                ephemeral=True)
+            return
+
+        self.claimed_by = interaction.user.id
+        button.disabled = True
+        button.label = t("warteraum.claimed_button", self.lang, user=interaction.user.display_name)
+        await interaction.response.edit_message(view=self)
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
+
+
+class Warteraum(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    async def _sync_guild_invites(self, guild: discord.Guild) -> None:
+    @commands.hybrid_group(name="warteraum", description="Warteraum-System verwalten.")
+    @commands.guild_only()
+    async def warteraum(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @warteraum.command(name="set", description="Legt den Warteraum-Sprachkanal und den Melde-Textkanal fest.")
+    @app_commands.describe(voice="Der Sprachkanal, der als Warteraum dient",
+                            text="Der Textkanal, in dem Meldungen erscheinen")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def warteraum_set(self, ctx: commands.Context, voice: discord.VoiceChannel, text: discord.TextChannel):
+        lang = await get_guild_language(ctx.guild.id)
+        async with get_session() as session:
+            settings = await get_or_create_guild_settings(session, ctx.guild.id)
+            settings.waiting_room_voice_channel_id = voice.id
+            settings.waiting_room_notify_channel_id = text.id
+            await session.commit()
+
+        await ctx.send(embed=success_embed(t("warteraum.set", lang, voice=voice.mention, text=text.mention)))
+
+    @warteraum.command(name="clear", description="Hebt die Warteraum-Einrichtung auf.")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def warteraum_clear(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        async with get_session() as session:
+            settings = await get_or_create_guild_settings(session, ctx.guild.id)
+            settings.waiting_room_voice_channel_id = 0
+            settings.waiting_room_notify_channel_id = 0
+            await session.commit()
+
+        await ctx.send(embed=success_embed(t("warteraum.cleared", lang)))
+
+    @warteraum.command(name="status", description="Zeigt die aktuelle Warteraum-Einrichtung.")
+    async def warteraum_status(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        snapshot = await get_guild_settings_snapshot(ctx.guild.id)
+        voice_id = snapshot["waiting_room_voice_channel_id"]
+        text_id = snapshot["waiting_room_notify_channel_id"]
+
+        if not voice_id or not text_id:
+            await ctx.send(embed=error_embed(t("warteraum.not_configured", lang)))
+            return
+
+        voice = ctx.guild.get_channel(voice_id)
+        text = ctx.guild.get_channel(text_id)
+        embed = base_embed("🙋 Warteraum-Status" if lang == "de" else "🙋 Waiting room status")
+        embed.add_field(name="Sprachkanal" if lang == "de" else "Voice channel",
+                         value=voice.mention if voice else "⚠️ (gelöscht)", inline=True)
+        embed.add_field(name="Melde-Kanal" if lang == "de" else "Notify channel",
+                         value=text.mention if text else "⚠️ (gelöscht)", inline=True)
+        await ctx.send(embed=embed)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState,
+                                     after: discord.VoiceState):
+        if member.bot:
+            return
+        # Nur reagieren, wenn der Kanal NEU betreten wurde (nicht bei Stumm/Deaf-Änderungen
+        # im selben Kanal, und nicht wenn jemand den Kanal nur verlässt).
+        if after.channel is None or before.channel == after.channel:
+            return
+
+        guild = after.channel.guild
+        snapshot = await get_guild_settings_snapshot(guild.id)
+        waiting_room_id = snapshot["waiting_room_voice_channel_id"]
+        notify_channel_id = snapshot["waiting_room_notify_channel_id"]
+        lang = snapshot["language"]
+
+        if not waiting_room_id or after.channel.id != waiting_room_id:
+            return
+        if not notify_channel_id:
+            return
+
+        # Bug-Fix: Spam-Schutz -- schnelles Verlassen/erneutes Beitreten löste
+        # vorher jedes Mal eine neue Meldung aus.
+        key = (guild.id, member.id)
+        now = time.monotonic()
+        last = _last_notify_time.get(key, 0)
+        if now - last < NOTIFY_COOLDOWN_SECONDS:
+            return
+        _last_notify_time[key] = now
+
+        notify_channel = guild.get_channel(notify_channel_id)
+        if not notify_channel:
+            return
+
+        embed = base_embed("🙋 Warteraum" if lang == "de" else "🙋 Waiting room")
+        embed.description = t("warteraum.notify", lang, user=member.mention, channel=after.channel.mention)
         try:
-            invites = await guild.invites()
+            await notify_channel.send(embed=embed, view=WaitingRoomAckView(lang))
         except discord.Forbidden:
-            log.warning("Fehlende 'Manage Server'-Berechtigung für Invite-Tracking in Guild %s", guild.id)
-            return
-        for invite in invites:
-            inviter_id = invite.inviter.id if invite.inviter else 0
-            await upsert_invite_record(guild.id, invite.code, inviter_id, invite.uses or 0)
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-        for guild in self.bot.guilds:
-            await self._sync_guild_invites(guild)
-
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild: discord.Guild):
-        await self._sync_guild_invites(guild)
-
-    @commands.Cog.listener()
-    async def on_invite_create(self, invite: discord.Invite):
-        inviter_id = invite.inviter.id if invite.inviter else 0
-        await upsert_invite_record(invite.guild.id, invite.code, inviter_id, invite.uses or 0)
-
-    @commands.Cog.listener()
-    async def on_invite_delete(self, invite: discord.Invite):
-        await remove_invite_record(invite.code)
-
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        guild = member.guild
-        try:
-            current_invites = await guild.invites()
-        except discord.Forbidden:
-            return
-
-        known = await get_invite_records(guild.id)
-        used_invite = None
-        for invite in current_invites:
-            record = known.get(invite.code)
-            if record and (invite.uses or 0) > record.uses:
-                used_invite = invite
-                break
-
-        # Snapshot immer aktualisieren, unabhängig davon, ob wir den genutzten
-        # Invite finden konnten (z.B. bei Vanity-URLs, die nicht auftauchen).
-        for invite in current_invites:
-            inviter_id = invite.inviter.id if invite.inviter else 0
-            await upsert_invite_record(guild.id, invite.code, inviter_id, invite.uses or 0)
-
-        if not used_invite or not used_invite.inviter:
-            return
-
-        account_age = dt.datetime.now(dt.timezone.utc) - member.created_at
-        is_fake = account_age.days < FAKE_ACCOUNT_AGE_DAYS
-
-        await record_invite_join(guild.id, member.id, used_invite.inviter.id, is_fake)
-
-    @commands.hybrid_command(name="invites", description="Zeigt, wie viele echte Einladungen ein User hat.")
-    @app_commands.describe(member="Optional: ein anderer User")
-    @commands.guild_only()
-    async def invites_cmd(self, ctx: commands.Context, member: discord.Member = None):
-        target = member or ctx.author
-        lang = await get_guild_language(ctx.guild.id)
-        count = await get_invite_count(ctx.guild.id, target.id)
-
-        embed = base_embed(f"📨 Einladungen von {target.display_name}" if lang == "de"
-                            else f"📨 Invites by {target.display_name}")
-        embed.description = (f"**{count}** echte Einladungen" if lang == "de"
-                              else f"**{count}** real invites")
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name="inviteleaderboard", description="Zeigt die Top 10 Einlader des Servers.")
-    @commands.guild_only()
-    async def inviteleaderboard(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        top = await get_invite_leaderboard(ctx.guild.id, limit=10)
-        if not top:
-            await ctx.send(embed=error_embed("Noch keine Einladungen erfasst." if lang == "de"
-                                              else "No invites tracked yet."))
-            return
-
-        embed = base_embed("📨 Invite-Leaderboard" if lang == "de" else "📨 Invite leaderboard")
-        medals = ["🥇", "🥈", "🥉"]
-        lines = []
-        for i, (inviter_id, count) in enumerate(top):
-            prefix = medals[i] if i < 3 else f"{i+1}."
-            plural = "Einladung" if count == 1 else "Einladungen" if lang == "de" else ("invite" if count == 1 else "invites")
-            lines.append(f"{prefix} <@{inviter_id}> — **{count}** {plural}")
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name="invitestats", description="Zeigt eine detaillierte Invite-Statistik (echt/fake/gesamt).")
-    @app_commands.describe(member="Optional: ein anderer User")
-    @commands.guild_only()
-    async def invitestats(self, ctx: commands.Context, member: discord.Member = None):
-        target = member or ctx.author
-        lang = await get_guild_language(ctx.guild.id)
-        stats = await get_invite_stats(ctx.guild.id, target.id)
-
-        embed = base_embed(f"📊 Invite-Statistik von {target.display_name}" if lang == "de"
-                            else f"📊 Invite stats for {target.display_name}")
-        embed.add_field(name="Echt" if lang == "de" else "Real", value=str(stats["real"]), inline=True)
-        embed.add_field(name="Fake", value=str(stats["fake"]), inline=True)
-        embed.add_field(name="Gesamt" if lang == "de" else "Total", value=str(stats["total"]), inline=True)
-        if stats["fake"] > 0:
-            embed.set_footer(text=(
-                "Fake = Account war bei Beitritt jünger als 7 Tage (Heuristik, keine Garantie)."
-                if lang == "de" else
-                "Fake = account was younger than 7 days at join (heuristic, not a guarantee)."
-            ))
-        await ctx.send(embed=embed)
+            pass
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Invites(bot))
+    await bot.add_cog(Warteraum(bot))

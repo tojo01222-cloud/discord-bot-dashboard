@@ -1,166 +1,294 @@
 """
-Info- und Hilfe-Befehle. Dient als REFERENZ-Cog für alle weiteren Module:
-Jeder Command wird als `hybrid_command` gebaut -> funktioniert automatisch
-sowohl als /befehl (Slash) als auch als !befehl (Prefix), ohne doppelten Code.
+Gewinnspiel-System.
 
-/help überarbeitet: statt einer einzigen, bei über 100 Befehlen unübersichtlich
-gewordenen Liste aus reinen Befehlsnamen (ohne Beschreibung, dicht an das
-Discord-Embed-Zeichenlimit gequetscht) gibt es jetzt eine Übersicht mit
-Kategorien-Anzahl PLUS ein Auswahlmenü: pro Kategorie eine übersichtliche
-Liste mit Befehl UND Kurzbeschreibung.
+/giveaway start <name> <beschreibung> <zeit> <kanal> [gesponsert_von] [invites_benoetigt] [nur_neue_invites]
+/giveaway end <id>       -- vorzeitig beenden und auslosen
+/giveaway reroll <id>    -- neuen Gewinner auslosen
+/giveaway list            -- laufende Gewinnspiele
+
+Zeit-Auswahl: 30s bis 4w, wie gewünscht.
+Invites: 1-100 einstellbar, wahlweise "alle bisherigen" oder "nur neue seit
+Gewinnspielstart" (siehe use_new_invites_only).
+
+Buttons sind persistent (überleben einen Bot-Neustart) -- werden beim Start
+für alle noch laufenden Gewinnspiele neu registriert (siehe cog_load).
 """
+import datetime as dt
+import logging
+import random
+
 import discord
-from discord.ext import commands
+from discord import app_commands
+from discord.ext import commands, tasks
 
-from bot.utils.embeds import base_embed
-from bot.utils.i18n import t
-from bot.utils.db_helpers import get_guild_language
+from bot.utils.permissions import require_level, PermissionLevel
+from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.db_helpers import (
+    get_guild_language,
+    create_giveaway,
+    set_giveaway_message_id,
+    get_active_giveaways,
+    get_giveaways_for_guild,
+    get_giveaway,
+    end_giveaway,
+    add_giveaway_entry,
+    get_giveaway_entries,
+    get_invite_count,
+)
 
-# Cog-Klassenname -> (Emoji, Anzeigename, Kategorie). Cogs ohne Eintrag hier
-# landen automatisch in einer "Sonstiges"-Kategorie -- diese Liste ist nur für
-# schönere Beschriftung/Gruppierung, kein Muss zum Funktionieren.
-COG_DISPLAY = {
-    "Moderation": ("🛡️", "Moderation", "Sicherheit & Moderation"),
-    "TeamManagement": ("👥", "Team", "Sicherheit & Moderation"),
-    "AntiNuke": ("💣", "Anti-Nuke", "Sicherheit & Moderation"),
-    "AntiSpam": ("🚫", "Anti-Spam", "Sicherheit & Moderation"),
-    "AntiHack": ("🕵️", "Anti-Hack", "Sicherheit & Moderation"),
-    "AntiWerbung": ("🔗", "Anti-Werbung", "Sicherheit & Moderation"),
-    "Strafregister": ("📁", "Strafregister", "Sicherheit & Moderation"),
-    "AutoRole": ("🤖", "Autorole", "Server-Einrichtung"),
-    "Language": ("🌐", "Sprache", "Server-Einrichtung"),
-    "Musik": ("🎵", "Musik", "Musik"),
-    "Tickets": ("🎫", "Tickets", "Tickets & Warteraum"),
-    "Warteraum": ("🙋", "Warteraum", "Tickets & Warteraum"),
-    "Level": ("📈", "Level", "Community"),
-    "Invites": ("📨", "Invites", "Community"),
-    "Giveaway": ("🎉", "Gewinnspiele", "Community"),
-    "Fun": ("🎈", "Fun", "Community"),
-    "InfoHelp": ("ℹ️", "Info", "Sonstiges"),
-}
-CATEGORY_ORDER = [
-    "Sicherheit & Moderation", "Server-Einrichtung", "Musik", "Tickets & Warteraum",
-    "Community", "Sonstiges",
-]
-CATEGORY_EMOJI = {
-    "Sicherheit & Moderation": "🛡️", "Server-Einrichtung": "⚙️", "Musik": "🎵",
-    "Tickets & Warteraum": "🎫", "Community": "🌟", "Sonstiges": "📦",
+log = logging.getLogger("bot.cogs.giveaway")
+
+TIME_CHOICES = {
+    "30s": 30, "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "2h": 7200, "3h": 10800, "4h": 14400, "5h": 18000, "6h": 21600, "12h": 43200,
+    "1d": 86400, "2d": 172800, "3d": 259200, "4d": 345600, "5d": 432000, "6d": 518400,
+    "1w": 604800, "2w": 1209600, "3w": 1814400, "4w": 2419200,
 }
 
 
-def _collect_commands_by_category(bot: commands.Bot) -> dict[str, list[tuple[str, str]]]:
-    """Baut {kategorie: [(befehl, beschreibung), ...]} aus allen geladenen Cogs."""
-    by_category: dict[str, list[tuple[str, str]]] = {c: [] for c in CATEGORY_ORDER}
-
-    for cog_name, cog in sorted(bot.cogs.items()):
-        _, _, category = COG_DISPLAY.get(cog_name, ("📦", cog_name, "Sonstiges"))
-        by_category.setdefault(category, [])
-
-        for cmd in cog.get_commands():
-            if isinstance(cmd, commands.Group):
-                for sub in cmd.commands:
-                    desc = sub.description or "—"
-                    by_category[category].append((f"/{cmd.name} {sub.name}", desc))
-            else:
-                desc = cmd.description or "—"
-                by_category[category].append((f"/{cmd.name}", desc))
-
-    return {cat: cmds for cat, cmds in by_category.items() if cmds}
-
-
-def _build_category_embed(lang: str, category: str, entries: list[tuple[str, str]]) -> discord.Embed:
-    emoji = CATEGORY_EMOJI.get(category, "📦")
-    embed = base_embed(f"{emoji} {category}")
-    lines = [f"**`{name}`** — {desc}" for name, desc in entries]
-    # Embed-Beschreibungslimit (4096 Zeichen) im Blick behalten -- bei sehr
-    # befehlsreichen Kategorien lieber sauber abschneiden als einen Fehler zu riskieren.
-    description = "\n".join(lines)
-    if len(description) > 3900:
-        description = description[:3900] + ("\n… weitere Befehle nicht angezeigt." if lang == "de"
-                                              else "\n… more commands not shown.")
-    embed.description = description
-    embed.set_footer(text=f"{len(entries)} Befehle in dieser Kategorie" if lang == "de"
-                      else f"{len(entries)} commands in this category")
+def _build_giveaway_embed(giveaway, entry_count: int) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"🎉 {giveaway.name}",
+        description=giveaway.description or "Klicke auf den Button, um teilzunehmen!",
+        color=discord.Color.gold(),
+    )
+    embed.add_field(name="Endet", value=discord.utils.format_dt(giveaway.ends_at.replace(tzinfo=dt.timezone.utc), style="R"), inline=True)
+    embed.add_field(name="Teilnehmer", value=str(entry_count), inline=True)
+    if giveaway.sponsor:
+        embed.add_field(name="Gesponsert von", value=giveaway.sponsor, inline=True)
+    if giveaway.invites_required > 0:
+        scope = "neue Invites seit Start" if giveaway.use_new_invites_only else "Invites insgesamt"
+        embed.add_field(name="Voraussetzung", value=f"Mindestens {giveaway.invites_required} {scope}", inline=False)
+    if giveaway.ended:
+        winner_text = f"<@{giveaway.winner_id}>" if giveaway.winner_id else "Niemand (keine gültige Teilnahme)"
+        embed.add_field(name="🏆 Gewinner", value=winner_text, inline=False)
+        embed.color = discord.Color.dark_grey()
     return embed
 
 
-class HelpCategorySelect(discord.ui.Select):
-    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
-        self.by_category = by_category
-        self.lang = lang
-        options = [
-            discord.SelectOption(label=cat, emoji=CATEGORY_EMOJI.get(cat, "📦"),
-                                  description=f"{len(cmds)} Befehle" if lang == "de" else f"{len(cmds)} commands")
-            for cat, cmds in by_category.items()
-        ]
-        placeholder = "Kategorie wählen..." if lang == "de" else "Choose a category..."
-        super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
+async def _handle_giveaway_join(interaction: discord.Interaction, giveaway_id: int) -> None:
+    giveaway = await get_giveaway(giveaway_id)
+    lang = await get_guild_language(interaction.guild.id)
 
-    async def callback(self, interaction: discord.Interaction):
-        category = self.values[0]
-        embed = _build_category_embed(self.lang, category, self.by_category[category])
-        await interaction.response.edit_message(embed=embed)
+    if not giveaway or giveaway.ended:
+        await interaction.response.send_message(
+            "Dieses Gewinnspiel ist bereits beendet." if lang == "de" else "This giveaway has already ended.",
+            ephemeral=True)
+        return
+
+    if giveaway.invites_required > 0:
+        since = giveaway.started_at if giveaway.use_new_invites_only else None
+        count = await get_invite_count(giveaway.guild_id, interaction.user.id, since=since)
+        if count < giveaway.invites_required:
+            missing = giveaway.invites_required - count
+            await interaction.response.send_message(
+                (f"Du brauchst mindestens {giveaway.invites_required} Einladungen, um teilzunehmen "
+                 f"(du hast aktuell {count}, es fehlen noch {missing}).") if lang == "de" else
+                (f"You need at least {giveaway.invites_required} invites to enter "
+                 f"(you currently have {count}, {missing} more needed)."),
+                ephemeral=True)
+            return
+
+    added = await add_giveaway_entry(giveaway_id, interaction.user.id)
+    if added:
+        await interaction.response.send_message(
+            "Du nimmst jetzt teil! 🎉" if lang == "de" else "You're entered! 🎉", ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            "Du nimmst bereits teil." if lang == "de" else "You're already entered.", ephemeral=True)
 
 
-class HelpView(discord.ui.View):
-    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
-        super().__init__(timeout=120)
-        self.add_item(HelpCategorySelect(by_category, lang))
+class GiveawayView(discord.ui.View):
+    """Persistenter View mit dynamischem custom_id pro Gewinnspiel (jedes
+    Gewinnspiel braucht seinen eigenen Button, daher kein fester custom_id
+    wie beim Ticket-System, sondern einer, der die Gewinnspiel-ID enthält)."""
 
-    async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True
+    def __init__(self, giveaway_id: int):
+        super().__init__(timeout=None)
+        self.giveaway_id = giveaway_id
+        button = discord.ui.Button(
+            label="Teilnehmen", emoji="🎉", style=discord.ButtonStyle.success,
+            custom_id=f"giveaway_join_{giveaway_id}",
+        )
+        button.callback = self._join_callback
+        self.add_item(button)
+
+    async def _join_callback(self, interaction: discord.Interaction):
+        await _handle_giveaway_join(interaction, self.giveaway_id)
 
 
-class InfoHelp(commands.Cog):
+class Giveaway(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", description="Zeigt alle verfügbaren Befehle, gruppiert nach Kategorie.")
-    async def help_command(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id) if ctx.guild else "de"
-        by_category = _collect_commands_by_category(self.bot)
-        total_commands = sum(len(cmds) for cmds in by_category.values())
+    async def cog_load(self) -> None:
+        # Persistente Views für alle noch laufenden Gewinnspiele neu registrieren.
+        active = await get_active_giveaways()
+        for g in active:
+            self.bot.add_view(GiveawayView(g.id))
+        self._check_expired_giveaways.start()
 
-        embed = base_embed(t("help.title", lang))
-        overview_lines = []
-        for cat in CATEGORY_ORDER:
-            if cat not in by_category:
-                continue
-            emoji = CATEGORY_EMOJI.get(cat, "📦")
-            count = len(by_category[cat])
-            plural = "Befehle" if lang == "de" else "commands"
-            overview_lines.append(f"{emoji} **{cat}** — {count} {plural}")
-        embed.description = (
-            ("Wähle unten eine Kategorie aus, um die Befehle mit Beschreibung zu sehen.\n\n"
-             if lang == "de" else
-             "Pick a category below to see its commands with descriptions.\n\n")
-            + "\n".join(overview_lines)
-        )
-        embed.set_footer(text=f"{total_commands} Befehle insgesamt" if lang == "de"
-                          else f"{total_commands} commands total")
+    def cog_unload(self) -> None:
+        self._check_expired_giveaways.cancel()
 
-        view = HelpView(by_category, lang)
-        await ctx.send(embed=embed, view=view)
+    @tasks.loop(seconds=30)
+    async def _check_expired_giveaways(self) -> None:
+        try:
+            active = await get_active_giveaways()
+            now = dt.datetime.utcnow()
+            for g in active:
+                if g.ends_at <= now:
+                    await self._finish_giveaway(g.id)
+        except Exception:
+            log.exception("Fehler beim Prüfen abgelaufener Gewinnspiele")
 
-    @commands.hybrid_command(name="serverinfo", description="Zeigt Informationen über diesen Server.")
+    async def _finish_giveaway(self, giveaway_id: int) -> None:
+        giveaway = await get_giveaway(giveaway_id)
+        if not giveaway or giveaway.ended:
+            return
+
+        entries = await get_giveaway_entries(giveaway_id)
+        guild = self.bot.get_guild(giveaway.guild_id)
+
+        # Bevorzugt jemanden auslosen, der den Server nicht inzwischen verlassen
+        # hat (Bug-Fix: vorher konnte ein längst ausgetretenes Mitglied gewinnen,
+        # dessen Erwähnung dann ins Leere zeigte). Sind ALLE Teilnehmer weg
+        # (z.B. sehr alter Giveaway), wird trotzdem ausgelost statt "niemand" zu
+        # melden -- das bleibt die bewusste Ausnahme.
+        eligible = [e for e in entries if guild and guild.get_member(e.user_id)] if guild else list(entries)
+        pool = eligible or entries
+        winner_id = random.choice(pool).user_id if pool else 0
+        await end_giveaway(giveaway_id, winner_id)
+
+        if not guild:
+            return
+        channel = guild.get_channel(giveaway.channel_id)
+        if not channel:
+            return
+
+        giveaway = await get_giveaway(giveaway_id)  # frisch mit ended=True/winner_id laden
+        embed = _build_giveaway_embed(giveaway, len(entries))
+
+        try:
+            if giveaway.message_id:
+                try:
+                    message = await channel.fetch_message(giveaway.message_id)
+                    await message.edit(embed=embed, view=None)
+                except discord.NotFound:
+                    pass
+            if winner_id:
+                await channel.send(f"🎉 Herzlichen Glückwunsch <@{winner_id}>! Du hast **{giveaway.name}** gewonnen!")
+            else:
+                await channel.send(f"Das Gewinnspiel **{giveaway.name}** ist beendet, aber es gab keine Teilnehmer.")
+        except discord.Forbidden:
+            pass
+
+    @commands.hybrid_group(name="giveaway", description="Gewinnspiele verwalten.")
     @commands.guild_only()
-    async def serverinfo(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        guild = ctx.guild
+    async def giveaway(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
 
-        embed = base_embed(t("serverinfo.title", lang))
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Name", value=guild.name, inline=True)
-        embed.add_field(name="Owner", value=str(guild.owner), inline=True)
-        embed.add_field(name="Mitglieder" if lang == "de" else "Members", value=str(guild.member_count), inline=True)
-        embed.add_field(name="Erstellt am" if lang == "de" else "Created at",
-                         value=discord.utils.format_dt(guild.created_at, style="D"), inline=True)
-        embed.add_field(name="Rollen" if lang == "de" else "Roles", value=str(len(guild.roles)), inline=True)
-        embed.add_field(name="Kanäle" if lang == "de" else "Channels", value=str(len(guild.channels)), inline=True)
+    @giveaway.command(name="start", description="Startet ein neues Gewinnspiel.")
+    @app_commands.describe(
+        name="Name des Gewinnspiels", beschreibung="Beschreibung/Preis", zeit="Wie lange das Gewinnspiel läuft",
+        kanal="In welchem Kanal das Gewinnspiel gepostet wird", gesponsert_von="Optional: Sponsor-Name",
+        invites_benoetigt="0-100, wie viele Einladungen zur Teilnahme nötig sind (0 = keine Anforderung)",
+        nur_neue_invites="Nur Invites seit Gewinnspielstart zählen (statt aller bisherigen)?",
+    )
+    @app_commands.choices(zeit=[app_commands.Choice(name=k, value=k) for k in TIME_CHOICES.keys()])
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def giveaway_start(
+        self, ctx: commands.Context, name: str, beschreibung: str, zeit: str, kanal: discord.TextChannel,
+        gesponsert_von: str = "", invites_benoetigt: int = 0, nur_neue_invites: bool = True,
+    ):
+        lang = await get_guild_language(ctx.guild.id)
+
+        if zeit not in TIME_CHOICES:
+            await ctx.send(embed=error_embed("Ungültige Zeitauswahl." if lang == "de" else "Invalid time choice."))
+            return
+        if invites_benoetigt < 0 or invites_benoetigt > 100:
+            await ctx.send(embed=error_embed(
+                "invites_benoetigt muss zwischen 0 und 100 liegen." if lang == "de"
+                else "invites_benoetigt must be between 0 and 100."))
+            return
+
+        await ctx.defer()
+
+        ends_at = dt.datetime.utcnow() + dt.timedelta(seconds=TIME_CHOICES[zeit])
+        giveaway = await create_giveaway(
+            ctx.guild.id, kanal.id, name, beschreibung, gesponsert_von,
+            invites_benoetigt, nur_neue_invites, ctx.author.id, ends_at,
+        )
+
+        embed = _build_giveaway_embed(giveaway, 0)
+        view = GiveawayView(giveaway.id)
+        message = await kanal.send(embed=embed, view=view)
+        await set_giveaway_message_id(giveaway.id, message.id)
+
+        await ctx.send(embed=success_embed(
+            "Gewinnspiel gestartet" if lang == "de" else "Giveaway started",
+            f"In {kanal.mention}, endet in {zeit}.",
+        ))
+
+    @giveaway.command(name="end", description="Beendet ein Gewinnspiel sofort und lost aus.")
+    @app_commands.describe(giveaway_id="Die ID des Gewinnspiels (siehe /giveaway list)")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def giveaway_end(self, ctx: commands.Context, giveaway_id: int):
+        lang = await get_guild_language(ctx.guild.id)
+        giveaway = await get_giveaway(giveaway_id)
+        if not giveaway or giveaway.guild_id != ctx.guild.id:
+            await ctx.send(embed=error_embed("Gewinnspiel nicht gefunden." if lang == "de" else "Giveaway not found."))
+            return
+        if giveaway.ended:
+            await ctx.send(embed=error_embed("Ist bereits beendet." if lang == "de" else "Already ended."))
+            return
+
+        await ctx.defer()
+        await self._finish_giveaway(giveaway_id)
+        await ctx.send(embed=success_embed("Beendet und ausgelost." if lang == "de" else "Ended and drawn."))
+
+    @giveaway.command(name="reroll", description="Lost einen neuen Gewinner für ein beendetes Gewinnspiel aus.")
+    @app_commands.describe(giveaway_id="Die ID des Gewinnspiels")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def giveaway_reroll(self, ctx: commands.Context, giveaway_id: int):
+        lang = await get_guild_language(ctx.guild.id)
+        giveaway = await get_giveaway(giveaway_id)
+        if not giveaway or giveaway.guild_id != ctx.guild.id or not giveaway.ended:
+            await ctx.send(embed=error_embed(
+                "Kein beendetes Gewinnspiel mit dieser ID gefunden." if lang == "de"
+                else "No ended giveaway found with that ID."))
+            return
+
+        entries = await get_giveaway_entries(giveaway_id)
+        if not entries:
+            await ctx.send(embed=error_embed("Keine Teilnehmer vorhanden." if lang == "de" else "No entries."))
+            return
+
+        new_winner = random.choice(entries).user_id
+        await end_giveaway(giveaway_id, new_winner)
+        await ctx.send(embed=success_embed(
+            "Neu ausgelost" if lang == "de" else "Rerolled",
+            f"🎉 Neuer Gewinner: <@{new_winner}>",
+        ))
+
+    @giveaway.command(name="list", description="Zeigt alle laufenden Gewinnspiele.")
+    async def giveaway_list(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        all_giveaways = await get_giveaways_for_guild(ctx.guild.id)
+        active = [g for g in all_giveaways if not g.ended]
+
+        if not active:
+            await ctx.send(embed=error_embed("Keine laufenden Gewinnspiele." if lang == "de"
+                                              else "No active giveaways."))
+            return
+
+        embed = base_embed("🎉 Laufende Gewinnspiele" if lang == "de" else "🎉 Active giveaways")
+        lines = [f"#{g.id} — **{g.name}** (endet {discord.utils.format_dt(g.ends_at.replace(tzinfo=dt.timezone.utc), style='R')})"
+                 for g in active]
+        embed.description = "\n".join(lines)
         await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(InfoHelp(bot))
+    await bot.add_cog(Giveaway(bot))

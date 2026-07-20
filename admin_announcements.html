@@ -1,14 +1,30 @@
 {% extends "base.html" %}
-{% block title %}Login — Bot Dashboard{% endblock %}
+{% block title %}Apply for our Team{% endblock %}
 {% block content %}
-<div class="login-box">
-    <h1>Willkommen </h1>
-    <p>Melde dich mit deinem Discord-Account an, um deine Server zu verwalten.</p>
-    <a href="/login" class="btn btn-discord">Mit Discord anmelden</a>
-    <p class="small-print">
-        Beim Login werden dein Discord-Name, dein Avatar und deine Server-Mitgliedschaften
-        gespeichert, damit wir dir die richtigen Server anzeigen können. Details siehe
-        <a href="/datenschutz" style="color:#9297ab;">Datenschutzerklärung</a>.
-    </p>
+<div class="hero">
+    <h1>Apply for our Team</h1>
+    <p>Want to help out? You can apply to join our team directly on our Discord server —
+       our staff reviews every application personally.</p>
+    {% if operator_invite %}
+    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 Join our Discord & Apply</a>
+    {% endif %}
+</div>
+
+<div class="feature-grid">
+    <div class="feature-card">
+        <div class="icon">1️⃣</div>
+        <h3>Join the Discord</h3>
+        <p>Click the button above to join our official Discord server.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">2️⃣</div>
+        <h3>Find the Application</h3>
+        <p>Look for our application channel or ticket system, or check the server dashboard for an application form.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">3️⃣</div>
+        <h3>Get Reviewed</h3>
+        <p>Our team reviews applications personally and will get back to you.</p>
+    </div>
 </div>
 {% endblock %}

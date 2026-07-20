@@ -1,35 +1,44 @@
-{% extends "base.html" %}
-{% block title %}Level-Rollen — {{ guild.name }}{% endblock %}
-{% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Level-Rollen — {{ guild.name }}</h1>
-
-{% if not rewards %}
-<p style="color:#9297ab;">Noch keine Level-Rollen eingerichtet.</p>
-{% else %}
-{% for r in rewards %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
-    <span>Level {{ r.level }} → Rollen-ID {{ r.role_id }}</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/levelrollen/{{ r.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
-</div>
-{% endfor %}
-{% endif %}
-
-<form method="post" action="/dashboard/{{ guild.id }}/levelrollen" class="settings-form" style="margin-top:24px;">
-    <div class="field">
-        <label for="level">Ab Level</label>
-        <input type="number" id="level" name="level" min="1" required>
-    </div>
-    <div class="field">
-        <label for="role_id">Rolle</label>
-        <select name="role_id" id="role_id">
-            {% for role in roles %}
-            <option value="{{ role.id }}">{{ role.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Hinzufügen</button>
-</form>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bot Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a href="/" class="brand">Bot Dashboard</a>
+            <nav style="display:flex; align-items:center; gap:18px;">
+                <a href="/apply" class="logout-link" style="font-weight:700;">✨ Apply</a>
+                <a href="/news" class="logout-link">News</a>
+                {% if user %}
+                <div class="user-chip">
+                    {% if user.avatar_hash %}
+                    <img src="https://cdn.discordapp.com/avatars/{{ user.discord_id }}/{{ user.avatar_hash }}.png" alt="">
+                    {% endif %}
+                    <span>{{ user.username }}</span>
+                    <a href="/admin/login" class="logout-link" style="margin-left:14px;">Admin-Panel</a>
+                    <a href="/logout" class="logout-link">Logout</a>
+                </div>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main class="content">
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+    </main>
+    <footer style="text-align:center; padding:24px; font-size:12px; color:#9297ab;">
+        {% if operator_invite %}
+        <a href="{{ operator_invite }}" target="_blank" class="btn btn-small btn-ghost" style="margin-bottom:12px; display:inline-block;">Unserem Discord beitreten</a>
+        <br>
+        {% endif %}
+        <a href="/impressum" style="color:#9297ab;">Impressum</a> ·
+        <a href="/datenschutz" style="color:#9297ab;">Datenschutz</a>
+    </footer>
+</body>
+</html>

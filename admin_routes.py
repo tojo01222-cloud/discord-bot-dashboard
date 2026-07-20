@@ -1,24 +1,20 @@
-{% extends "admin_base.html" %}
-{% block title %}Übersicht — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}News{% endblock %}
 {% block content %}
-<h1>Übersicht</h1>
+<a href="/" class="back-link">← Zurück</a>
+<h1>News</h1>
 
-{% if maintenance_mode %}
-<div class="flash flash-error">Der Bot befindet sich aktuell im Wartungsmodus.</div>
-{% endif %}
-
-<div class="admin-stat-grid">
-    <div class="admin-stat">
-        <div class="value">{{ guild_count }}</div>
-        <div class="label">Server mit Bot</div>
+{% if not posts %}
+<p style="color:#9297ab;">Noch keine News.</p>
+{% else %}
+<div style="display:flex; flex-direction:column; gap:18px; margin-top:24px;">
+    {% for post in posts %}
+    <div class="feature-card">
+        <h3>{{ post.title }}</h3>
+        <p style="color:#9297ab; font-size:12px; margin-bottom:10px;">{{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+        <p style="color:#f5f6fa;">{{ post.content }}</p>
     </div>
-    <div class="admin-stat">
-        <div class="value">{{ total_members }}</div>
-        <div class="label">Mitglieder gesamt (aller Server)</div>
-    </div>
-    <div class="admin-stat">
-        <div class="value">{{ "Aktiv" if not maintenance_mode else "Wartung" }}</div>
-        <div class="label">Bot-Status</div>
-    </div>
+    {% endfor %}
 </div>
+{% endif %}
 {% endblock %}

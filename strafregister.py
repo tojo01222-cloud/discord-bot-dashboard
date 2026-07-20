@@ -1,169 +1,209 @@
 """
-Warteraum-System.
+Autorole-System.
 
-- /warteraum set <voice-kanal> <text-kanal>   -- legt Warteraum + Melde-Kanal fest (SERVER_ADMIN)
-- /warteraum clear                             -- hebt die Einrichtung auf (SERVER_ADMIN)
-- /warteraum status                            -- zeigt die aktuelle Einrichtung
+- /autorole set <ziel> <rolle>   -- richtet eine Autorole ein (SERVER_ADMIN)
+- /autorole clear <ziel>         -- entfernt eine Autorole-Einrichtung (SERVER_ADMIN)
+- /autorole liste                -- zeigt die aktuelle Einrichtung
 
-Sobald jemand dem konfigurierten Sprachkanal (Warteraum) beitritt, sendet der
-Bot automatisch eine Nachricht in den festgelegten Textkanal, dass diese
-Person Hilfe braucht -- wie ursprünglich gewünscht. Ein Team-Mitglied kann
-sich über den Button "Ich kümmere mich darum" als zuständig markieren, damit
-nicht mehrere gleichzeitig antworten.
+Drei unabhängige Ziele (jedes kann eine eigene Rolle haben, 0 = nicht
+eingerichtet):
+  alle    -> wird JEDEM neuen menschlichen Mitglied beim Beitritt vergeben
+  bots    -> wird JEDEM neuen Bot-/App-Account beim Beitritt vergeben
+  admins  -> wird automatisch vergeben/entzogen, sobald ein Mitglied
+             Administrator-Rechte bekommt bzw. verliert (egal ob direkt beim
+             Beitritt oder später durch eine andere Rolle) -- praktisch, um
+             Admins auf einen Blick sichtbar zu markieren (z.B. eigene Farbe),
+             ohne das manuell nachpflegen zu müssen.
 
-Bug-Fix: vorher löste JEDER Beitritt sofort eine Meldung aus -- wer schnell
-den Kanal verlässt und wieder betritt (oder zwischen zwei Warteräumen hin-
-und herwechselt), erzeugte Spam im Melde-Kanal. Jetzt gibt es einen kurzen
-Cooldown pro User.
+Vorher gab es nur EIN einzelnes Autorole-Feld ohne Unterscheidung zwischen
+Mensch und Bot -- ein neu hinzugefügter Bot hätte also ungewollt dieselbe
+"Willkommens"-Rolle bekommen wie ein Mensch. Das ist jetzt sauber getrennt.
 """
-import time
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.permissions import require_level, PermissionLevel, get_member_permission_level
+from bot.utils.permissions import require_level, PermissionLevel
 from bot.utils.embeds import success_embed, error_embed, base_embed
 from bot.utils.i18n import t
-from bot.utils.db_helpers import get_guild_language, get_or_create_guild_settings, get_guild_settings_snapshot
-from bot.database.db import get_session
+from bot.utils.db_helpers import get_guild_language, get_guild_settings_snapshot, set_autorole, AUTOROLE_TARGETS
 
-NOTIFY_COOLDOWN_SECONDS = 30
+TARGET_CHOICES = [
+    app_commands.Choice(name="Alle (Menschen)", value="alle"),
+    app_commands.Choice(name="Bots/Apps", value="bots"),
+    app_commands.Choice(name="Administratoren", value="admins"),
+]
 
-# In-Memory-Cache (guild_id, user_id) -> Zeitstempel der letzten Meldung.
-# Verhindert Spam im Melde-Kanal bei schnellem Verlassen/erneutem Beitreten.
-_last_notify_time: dict[tuple[int, int], float] = {}
-
-
-class WaitingRoomAckView(discord.ui.View):
-    """Nicht-persistenter View (bewusst kein bot.add_view() nötig -- eine
-    Warteraum-Meldung ist von Natur aus kurzlebig; nach einem Bot-Neustart
-    ist der Button einfach nicht mehr klickbar, was für diesen Anwendungsfall
-    unkritisch ist)."""
-
-    def __init__(self, lang: str):
-        super().__init__(timeout=1800)  # 30 Minuten, danach automatisch deaktiviert
-        self.lang = lang
-        self.claimed_by: int | None = None
-
-    @discord.ui.button(label="Ich kümmere mich darum", emoji="🙋", style=discord.ButtonStyle.primary)
-    async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if get_member_permission_level(interaction.user) < PermissionLevel.TEAM:
-            await interaction.response.send_message(embed=error_embed(t("no_permission", self.lang)), ephemeral=True)
-            return
-        if self.claimed_by:
-            await interaction.response.send_message(
-                embed=error_embed(t("warteraum.already_claimed", self.lang, user=f"<@{self.claimed_by}>")),
-                ephemeral=True)
-            return
-
-        self.claimed_by = interaction.user.id
-        button.disabled = True
-        button.label = t("warteraum.claimed_button", self.lang, user=interaction.user.display_name)
-        await interaction.response.edit_message(view=self)
-
-    async def on_timeout(self) -> None:
-        for item in self.children:
-            item.disabled = True
+_SNAPSHOT_KEY_BY_TARGET = {
+    "alle": "autorole_id",
+    "bots": "autorole_bot_id",
+    "admins": "autorole_admin_id",
+}
 
 
-class Warteraum(commands.Cog):
+class AutoRole(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_group(name="warteraum", description="Warteraum-System verwalten.")
-    @commands.guild_only()
-    async def warteraum(self, ctx: commands.Context):
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
-
-    @warteraum.command(name="set", description="Legt den Warteraum-Sprachkanal und den Melde-Textkanal fest.")
-    @app_commands.describe(voice="Der Sprachkanal, der als Warteraum dient",
-                            text="Der Textkanal, in dem Meldungen erscheinen")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def warteraum_set(self, ctx: commands.Context, voice: discord.VoiceChannel, text: discord.TextChannel):
-        lang = await get_guild_language(ctx.guild.id)
-        async with get_session() as session:
-            settings = await get_or_create_guild_settings(session, ctx.guild.id)
-            settings.waiting_room_voice_channel_id = voice.id
-            settings.waiting_room_notify_channel_id = text.id
-            await session.commit()
-
-        await ctx.send(embed=success_embed(t("warteraum.set", lang, voice=voice.mention, text=text.mention)))
-
-    @warteraum.command(name="clear", description="Hebt die Warteraum-Einrichtung auf.")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def warteraum_clear(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        async with get_session() as session:
-            settings = await get_or_create_guild_settings(session, ctx.guild.id)
-            settings.waiting_room_voice_channel_id = 0
-            settings.waiting_room_notify_channel_id = 0
-            await session.commit()
-
-        await ctx.send(embed=success_embed(t("warteraum.cleared", lang)))
-
-    @warteraum.command(name="status", description="Zeigt die aktuelle Warteraum-Einrichtung.")
-    async def warteraum_status(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        snapshot = await get_guild_settings_snapshot(ctx.guild.id)
-        voice_id = snapshot["waiting_room_voice_channel_id"]
-        text_id = snapshot["waiting_room_notify_channel_id"]
-
-        if not voice_id or not text_id:
-            await ctx.send(embed=error_embed(t("warteraum.not_configured", lang)))
-            return
-
-        voice = ctx.guild.get_channel(voice_id)
-        text = ctx.guild.get_channel(text_id)
-        embed = base_embed("🙋 Warteraum-Status" if lang == "de" else "🙋 Waiting room status")
-        embed.add_field(name="Sprachkanal" if lang == "de" else "Voice channel",
-                         value=voice.mention if voice else "⚠️ (gelöscht)", inline=True)
-        embed.add_field(name="Melde-Kanal" if lang == "de" else "Notify channel",
-                         value=text.mention if text else "⚠️ (gelöscht)", inline=True)
-        await ctx.send(embed=embed)
-
+    # ---------- Beitritt: alle / bots ----------
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState,
-                                     after: discord.VoiceState):
-        if member.bot:
+    async def on_member_join(self, member: discord.Member) -> None:
+        snapshot = await get_guild_settings_snapshot(member.guild.id)
+        role_id = snapshot.get("autorole_bot_id", 0) if member.bot else snapshot.get("autorole_id", 0)
+        if role_id:
+            role = member.guild.get_role(role_id)
+            if role:
+                try:
+                    await member.add_roles(role, reason="Autorole")
+                except discord.Forbidden:
+                    pass
+
+        # Falls das neue Mitglied (z.B. durch eine Integration) direkt beim
+        # Beitritt schon Administrator-Rechte mitbringt, sofort die
+        # Admin-Autorole mitgeben, statt auf die nächste Rollenänderung zu warten.
+        admin_role_id = snapshot.get("autorole_admin_id", 0)
+        if admin_role_id and member.guild_permissions.administrator:
+            role = member.guild.get_role(admin_role_id)
+            if role and role not in member.roles:
+                try:
+                    await member.add_roles(role, reason="Autorole: Administrator-Rechte erkannt")
+                except discord.Forbidden:
+                    pass
+
+    # ---------- Admin-Rechte gewonnen/verloren ----------
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        had_admin = before.guild_permissions.administrator
+        has_admin = after.guild_permissions.administrator
+        if had_admin == has_admin:
+            return  # keine Änderung an den Administrator-Rechten -- nichts zu tun
+
+        snapshot = await get_guild_settings_snapshot(after.guild.id)
+        admin_role_id = snapshot.get("autorole_admin_id", 0)
+        if not admin_role_id:
             return
-        # Nur reagieren, wenn der Kanal NEU betreten wurde (nicht bei Stumm/Deaf-Änderungen
-        # im selben Kanal, und nicht wenn jemand den Kanal nur verlässt).
-        if after.channel is None or before.channel == after.channel:
+        role = after.guild.get_role(admin_role_id)
+        if not role:
             return
 
-        guild = after.channel.guild
-        snapshot = await get_guild_settings_snapshot(guild.id)
-        waiting_room_id = snapshot["waiting_room_voice_channel_id"]
-        notify_channel_id = snapshot["waiting_room_notify_channel_id"]
-        lang = snapshot["language"]
-
-        if not waiting_room_id or after.channel.id != waiting_room_id:
-            return
-        if not notify_channel_id:
-            return
-
-        # Bug-Fix: Spam-Schutz -- schnelles Verlassen/erneutes Beitreten löste
-        # vorher jedes Mal eine neue Meldung aus.
-        key = (guild.id, member.id)
-        now = time.monotonic()
-        last = _last_notify_time.get(key, 0)
-        if now - last < NOTIFY_COOLDOWN_SECONDS:
-            return
-        _last_notify_time[key] = now
-
-        notify_channel = guild.get_channel(notify_channel_id)
-        if not notify_channel:
-            return
-
-        embed = base_embed("🙋 Warteraum" if lang == "de" else "🙋 Waiting room")
-        embed.description = t("warteraum.notify", lang, user=member.mention, channel=after.channel.mention)
         try:
-            await notify_channel.send(embed=embed, view=WaitingRoomAckView(lang))
+            if has_admin and role not in after.roles:
+                await after.add_roles(role, reason="Autorole: Administrator-Rechte erhalten")
+            elif not has_admin and role in after.roles:
+                await after.remove_roles(role, reason="Autorole: Administrator-Rechte verloren")
         except discord.Forbidden:
             pass
 
+    # ---------- Commands ----------
+    @commands.hybrid_group(name="autorole", description="Automatische Rollenvergabe verwalten.")
+    @commands.guild_only()
+    async def autorole(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @autorole.command(name="set", description="Richtet eine Autorole für ein Ziel ein.")
+    @app_commands.describe(ziel="Für wen die Rolle automatisch vergeben wird", rolle="Die zu vergebende Rolle")
+    @app_commands.choices(ziel=TARGET_CHOICES)
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def autorole_set(self, ctx: commands.Context, ziel: str, rolle: discord.Role):
+        lang = await get_guild_language(ctx.guild.id)
+        if ziel not in AUTOROLE_TARGETS:
+            await ctx.send(embed=error_embed("Ungültiges Ziel." if lang == "de" else "Invalid target."))
+            return
+        if rolle >= ctx.guild.me.top_role:
+            await ctx.send(embed=error_embed(
+                "Diese Rolle steht höher als (oder gleich) meine eigene -- ich kann sie nicht vergeben."
+                if lang == "de" else
+                "That role is higher than (or equal to) my own -- I can't assign it."))
+            return
+
+        await set_autorole(ctx.guild.id, ziel, rolle.id)
+        target_label = t(f"autorole.target_{ziel}", lang)
+        await ctx.send(embed=success_embed(t("autorole.set", lang, target=target_label, role=rolle.mention)))
+
+    @autorole.command(name="clear", description="Entfernt die Autorole-Einrichtung für ein Ziel.")
+    @app_commands.describe(ziel="Für welches Ziel die Autorole entfernt wird")
+    @app_commands.choices(ziel=TARGET_CHOICES)
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def autorole_clear(self, ctx: commands.Context, ziel: str):
+        lang = await get_guild_language(ctx.guild.id)
+        if ziel not in AUTOROLE_TARGETS:
+            await ctx.send(embed=error_embed("Ungültiges Ziel." if lang == "de" else "Invalid target."))
+            return
+        await set_autorole(ctx.guild.id, ziel, 0)
+        target_label = t(f"autorole.target_{ziel}", lang)
+        await ctx.send(embed=success_embed(t("autorole.cleared", lang, target=target_label)))
+
+    @autorole.command(name="liste", description="Zeigt die aktuelle Autorole-Einrichtung.")
+    async def autorole_liste(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        snapshot = await get_guild_settings_snapshot(ctx.guild.id)
+
+        lines = []
+        for target in AUTOROLE_TARGETS:
+            role_id = snapshot.get(_SNAPSHOT_KEY_BY_TARGET[target], 0)
+            role = ctx.guild.get_role(role_id) if role_id else None
+            label = t(f"autorole.target_{target}", lang)
+            value = role.mention if role else ("— nicht eingerichtet —" if lang == "de" else "— not configured —")
+            lines.append(f"**{label}**: {value}")
+
+        if not any(snapshot.get(v) for v in _SNAPSHOT_KEY_BY_TARGET.values()):
+            await ctx.send(embed=error_embed(t("autorole.list_empty", lang)))
+            return
+
+        embed = base_embed(t("autorole.list_title", lang))
+        embed.description = "\n".join(lines)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="autorole_all",
+        description="Vergibt eine Rolle rückwirkend an ALLE aktuellen (menschlichen) Mitglieder.",
+    )
+    @app_commands.describe(rolle="Die Rolle, die alle aktuellen Mitglieder bekommen sollen")
+    @commands.guild_only()
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def autorole_all(self, ctx: commands.Context, rolle: discord.Role):
+        lang = await get_guild_language(ctx.guild.id)
+
+        if rolle >= ctx.guild.me.top_role:
+            await ctx.send(embed=error_embed(
+                "Diese Rolle steht höher als (oder gleich) meine eigene -- ich kann sie nicht vergeben."
+                if lang == "de" else
+                "That role is higher than (or equal to) my own -- I can't assign it."))
+            return
+
+        # Kann bei großen Servern eine Weile dauern (ein API-Aufruf pro
+        # Mitglied) -- defer() verhindert den 3-Sekunden-Timeout der Interaktion.
+        await ctx.defer()
+
+        given, already_had, failed = 0, 0, 0
+        for member in ctx.guild.members:
+            if member.bot:
+                continue
+            if rolle in member.roles:
+                already_had += 1
+                continue
+            try:
+                await member.add_roles(rolle, reason=f"/autorole_all von {ctx.author}")
+                given += 1
+            except discord.Forbidden:
+                failed += 1
+            except discord.HTTPException:
+                failed += 1
+
+        summary = (
+            f"{given} Mitgliedern die Rolle {rolle.mention} gegeben.\n"
+            f"{already_had} hatten sie bereits.\n"
+            + (f"{failed} fehlgeschlagen (Berechtigung/Rate-Limit)." if failed else "")
+            if lang == "de" else
+            f"Gave {rolle.mention} to {given} members.\n"
+            f"{already_had} already had it.\n"
+            + (f"{failed} failed (permission/rate limit)." if failed else "")
+        )
+        await ctx.send(embed=success_embed(
+            "Autorole rückwirkend vergeben" if lang == "de" else "Autorole applied retroactively", summary,
+        ))
+
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Warteraum(bot))
+    await bot.add_cog(AutoRole(bot))

@@ -1,24 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Tickets — {{ guild.name }}{% endblock %}
+{% block title %}Deine Server — Bot Dashboard{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Tickets — {{ guild.name }}</h1>
+<h1>Deine Server</h1>
+<p>Server, auf denen du Admin-Rechte hast:</p>
 
-{% if not tickets %}
-<p style="color:#9297ab;">Noch keine Tickets vorhanden.</p>
-{% else %}
-<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:10px; padding:0;">
-    <table class="admin-table">
-        <tr><th>Status</th><th>Ersteller</th><th>Design</th><th>Erstellt am</th></tr>
-        {% for t in tickets %}
-        <tr>
-            <td>{{ t.status }}</td>
-            <td>{{ t.creator_id }}</td>
-            <td>{{ t.design }}</td>
-            <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<div class="guild-grid">
+    {% for guild in manageable_guilds %}
+    <div class="guild-card {% if not guild.bot_present %}guild-card-disabled{% endif %}">
+        {% if guild.icon %}
+        <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png" alt="">
+        {% else %}
+        <div class="guild-icon-placeholder">{{ guild.name[0] }}</div>
+        {% endif %}
+        <span class="guild-name">{{ guild.name }}</span>
+        {% if guild.bot_present %}
+        <a href="/dashboard/{{ guild.id }}" class="btn btn-small">Verwalten</a>
+        {% else %}
+        <a href="{{ invite_url }}&guild_id={{ guild.id }}" target="_blank" class="btn btn-small btn-ghost">Bot einladen</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>Du hast auf keinem Server, den der Bot kennt oder auf dem du Admin bist, etwas zu verwalten.</p>
+    {% endfor %}
 </div>
-{% endif %}
 {% endblock %}

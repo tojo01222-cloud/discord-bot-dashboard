@@ -1,13 +1,65 @@
-{% extends "admin_base.html" %}
-{% block title %}Statistiken — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Bewerbungs-Einstellungen — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Statistiken (alle Server)</h1>
-<div class="admin-stat-grid">
-    <div class="admin-stat"><div class="value">{{ stats.guild_count }}</div><div class="label">Server</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.total_members }}</div><div class="label">Mitglieder gesamt</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.dashboard_user_count }}</div><div class="label">Dashboard-User</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.punishment_count }}</div><div class="label">Strafen gesamt</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.open_ticket_count }}</div><div class="label">Offene Tickets</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.pending_application_count }}</div><div class="label">Offene Bewerbungen</div></div>
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
+<h1>Bewerbungs-Einstellungen — {{ guild.name }}</h1>
+
+<div class="admin-stat-grid" style="margin-bottom:24px;">
+    <div class="admin-stat"><div class="value">{{ stats.pending }}</div><div class="label">Offen</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.accepted }}</div><div class="label">Angenommen</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.rejected }}</div><div class="label">Abgelehnt</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.total }}</div><div class="label">Gesamt</div></div>
 </div>
+
+<form method="post" action="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="settings-form">
+    <div class="field">
+        <label>
+            <input type="checkbox" name="enabled" value="on" {% if config.enabled %}checked{% endif %}>
+            Bewerbungsformular aktiv
+        </label>
+    </div>
+    <div class="field">
+        <label for="welcome_text">Begrüßungstext</label>
+        <input type="text" id="welcome_text" name="welcome_text" value="{{ config.welcome_text }}">
+    </div>
+    <div class="field">
+        <label for="notify_channel_id">Benachrichtigungs-Kanal (bei neuer Bewerbung)</label>
+        <select name="notify_channel_id" id="notify_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if notify_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn">Speichern</button>
+</form>
+
+<h2 style="margin-top:40px; font-size:18px;">Fragen</h2>
+{% for q in questions %}
+<div style="padding:12px 0; border-bottom:1px solid #262838;">
+    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/bearbeiten" style="display:flex; gap:8px; align-items:center;">
+        <input type="text" name="question_text" value="{{ q.question_text }}"
+               style="flex:1; background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:8px 12px;border-radius:6px;">
+        <button type="submit" class="btn btn-small">Speichern</button>
+    </form>
+    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/loeschen" style="margin-top:6px;">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Fragen eingerichtet.</p>
+{% endfor %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen" class="settings-form" style="margin-top:20px;">
+    <div class="field">
+        <label for="question_text">Neue Frage</label>
+        <input type="text" id="question_text" name="question_text" placeholder="z.B. Warum möchtest du ins Team?" required>
+    </div>
+    <button type="submit" class="btn btn-small">Frage hinzufügen</button>
+</form>
+
+<p class="hint">
+    Bewerbungslink für diesen Server: <br>
+    <code>{{ request.url.scheme }}://{{ request.url.netloc }}/bewerbung/{{ guild.id }}</code>
+</p>
 {% endblock %}

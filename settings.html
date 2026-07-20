@@ -1,36 +1,37 @@
-{% extends "base.html" %}
-{% block title %}Bewerbungen — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Server — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Bewerbungen — {{ guild.name }}</h1>
+<h1>Server ({{ guilds|length }})</h1>
 
-<form method="get" action="/dashboard/{{ guild.id }}/bewerbungen" style="margin-bottom:20px;">
-    <select name="status" onchange="this.form.submit()"
-            style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:8px;">
-        <option value="" {% if not status %}selected{% endif %}>Alle</option>
-        <option value="pending" {% if status == "pending" %}selected{% endif %}>Offen</option>
-        <option value="accepted" {% if status == "accepted" %}selected{% endif %}>Angenommen</option>
-        <option value="rejected" {% if status == "rejected" %}selected{% endif %}>Abgelehnt</option>
+<form method="get" action="/admin/servers" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+    <input type="text" name="q" placeholder="Server suchen..." value="{{ q|default('') }}"
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
+    <select name="sort" style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;">
+        <option value="name" {% if sort|default('name') == "name" %}selected{% endif %}>Nach Name</option>
+        <option value="members" {% if sort|default('name') == "members" %}selected{% endif %}>Nach Mitgliederzahl</option>
     </select>
+    <button type="submit" class="btn btn-small">Filtern</button>
 </form>
 
-{% if not applications %}
-<p style="color:#9297ab;">Keine Bewerbungen gefunden.</p>
-{% else %}
-<div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
-    {% for a in applications %}
-    <div style="display:flex; justify-content:space-between; align-items:center;
-                background:#14151f; border:1px solid #262838; border-radius:10px; padding:18px 22px;">
-        <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}" style="text-decoration:none; color:inherit;">
-            <div style="font-weight:700; color:#f5f6fa;">{{ a.applicant_username }}</div>
-            <div style="color:#9297ab; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
-        </a>
-        <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}/loeschen"
-              onsubmit="return confirm('Diese Bewerbung wirklich löschen?');">
-            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-        </form>
-    </div>
-    {% endfor %}
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Name</th><th>Mitglieder</th><th>Server-ID</th><th>Aktionen</th></tr>
+        {% for g in guilds %}
+        <tr>
+            <td>{{ g.name }}</td>
+            <td>{{ g.member_count }}</td>
+            <td>{{ g.guild_id }}</td>
+            <td>
+                <form method="post" action="/admin/servers/{{ g.guild_id }}/invite" style="display:inline;">
+                    <button type="submit" class="btn btn-small">Link erzeugen</button>
+                </form>
+                <form method="post" action="/admin/servers/{{ g.guild_id }}/leave" style="display:inline;"
+                      onsubmit="return confirm('Wirklich verlassen? Der Bot ist danach nicht mehr auf diesem Server.');">
+                    <button type="submit" class="btn btn-small btn-ghost">Verlassen</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
-{% endif %}
 {% endblock %}

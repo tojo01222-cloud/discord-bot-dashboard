@@ -1,36 +1,23 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin-Login</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <main class="content">
-        <div class="login-box">
-            <h1>Admin-Panel</h1>
-            <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
-            {% for message in messages %}
-            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
-            {% endfor %}
-            <form method="post" action="/admin/login" class="settings-form" style="text-align:left; margin-top:20px;">
-                <div class="field">
-                    <label for="username">Benutzername</label>
-                    <input type="text" id="username" name="username" required>
-                </div>
-                <div class="field">
-                    <label for="password">Passwort</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <button type="submit" class="btn">Anmelden</button>
-            </form>
-            {% if operator_invite %}
-            <p class="small-print">
-                <a href="{{ operator_invite }}" target="_blank" style="color:#9297ab;">Unserem Discord beitreten</a>
-            </p>
-            {% endif %}
-        </div>
-    </main>
-</body>
-</html>
+{% extends "admin_base.html" %}
+{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Ankündigungs-Historie</h1>
+<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+
+{% if not announcements %}
+<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
+{% else %}
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
+        {% for a in announcements %}
+        <tr>
+            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
+            <td>{{ a.guild_count }}</td>
+            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}

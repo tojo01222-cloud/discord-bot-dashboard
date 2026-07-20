@@ -1,69 +1,71 @@
 """
-Anti-Werbung-System.
+Anti-Hack-System.
 
-- /antiwerbung on|off              -- System ein-/ausschalten (SERVER_ADMIN)
-- /antiwerbung_add <user|rolle>    -- darf Links posten, von der Erkennung ausgenommen (SERVER_ADMIN)
-- /antiwerbung_liste                -- zeigt die Ausnahmeliste
+- /antihack on|off              -- System ein-/ausschalten (SERVER_ADMIN)
+- /antihack_add <user|rolle>    -- von der Erkennung ausnehmen (SERVER_ADMIN)
+- /antihack_liste                -- zeigt die Ausnahmeliste
 
-Postet ein nicht ausgenommener User einen Link (egal welchen), wird die
-Nachricht sofort gelöscht und eskalierend bestraft, pro User hochgezählt und
-dauerhaft gespeichert (siehe AntiWerbungStrike):
-  1. Verstoß -> 1 Stunde Timeout
-  2. Verstoß -> 1 Tag Timeout
-  3. Verstoß -> 7 Tage Timeout
-  4. Verstoß (und jeder weitere) -> Kick
-
-Server-Administratoren, der Server-Owner und explizit über /antiwerbung_add
-ausgenommene User/Rollen sind von der Erkennung ausgenommen (dürfen frei
-Links posten).
+Erkennung: postet ein Account innerhalb kurzer Zeit etwas mit Anhang oder Link
+(z.B. Bilder) in mehrere VERSCHIEDENE Kanäle, gilt das als typisches Verhalten
+eines gekaperten/kompromittierten Accounts (Self-Bot-Spam) -- der Account wird
+automatisch gekickt, informiert per DM (best effort) und im Strafregister
+vermerkt. Ganz normales Chatten in mehreren Kanälen OHNE Anhang/Link löst
+NICHTS aus, um Fehlalarme bei normalen Usern zu vermeiden.
 """
 import datetime as dt
 import logging
 import re
+from collections import defaultdict, deque
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from bot.utils.permissions import require_level, PermissionLevel
-from bot.utils.embeds import success_embed
+from bot.utils.embeds import success_embed, error_embed, base_embed
 from bot.utils.i18n import t
 from bot.utils.db_helpers import (
     get_guild_language,
-    get_anti_werbung_enabled,
-    set_anti_werbung_enabled,
+    get_anti_hack_enabled,
+    set_anti_hack_enabled,
     is_anti_exempt,
-    bump_anti_werbung_strike,
+    add_anti_exemption,
+    remove_anti_exemption,
+    get_anti_exemptions,
     log_punishment,
 )
 from bot.database.db import get_session
 from bot.database.models import GuildSettings
-from bot.cogs.anti_hack import _add_exemption, _list_exemptions
 
-log = logging.getLogger("bot.anti_werbung")
+log = logging.getLogger("bot.anti_hack")
 
-_LINK_RE = re.compile(r"https?://\S+|www\.\S+|discord\.gg/\S+", re.IGNORECASE)
+# Schwellenwerte: X VERSCHIEDENE Kanäle mit Anhang/Link innerhalb von Y Sekunden.
+DISTINCT_CHANNEL_THRESHOLD = 3
+WINDOW_SECONDS = 15
 
-# Eskalationsstufen: Verstoß-Nummer -> Timeout-Dauer. Alles ab der letzten
-# definierten Stufe + 1 (hier also ab dem 4. Verstoß) führt zum Kick.
-ESCALATION = {
-    1: dt.timedelta(hours=1),
-    2: dt.timedelta(days=1),
-    3: dt.timedelta(days=7),
-}
+_LINK_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 
 
-class AntiWerbung(commands.Cog):
+def _looks_shareable(message: discord.Message) -> bool:
+    """True, wenn die Nachricht etwas 'Teilbares' enthält (Anhang oder Link) --
+    reines Chatten ohne das löst die Erkennung nie aus."""
+    return bool(message.attachments) or bool(_LINK_RE.search(message.content or ""))
+
+
+class AntiHack(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # guild_id -> user_id -> deque[(timestamp, channel_id)]
+        self._activity: dict[int, dict[int, deque]] = defaultdict(lambda: defaultdict(deque))
+        self._punishing: set[tuple[int, int]] = set()
 
     async def _is_exempt(self, member: discord.Member) -> bool:
         if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
             return True
-        if await is_anti_exempt(member.guild.id, "antiwerbung", "user", member.id):
+        if await is_anti_exempt(member.guild.id, "antihack", "user", member.id):
             return True
         for role in member.roles:
-            if await is_anti_exempt(member.guild.id, "antiwerbung", "role", role.id):
+            if await is_anti_exempt(member.guild.id, "antihack", "role", role.id):
                 return True
         return False
 
@@ -71,105 +73,130 @@ class AntiWerbung(commands.Cog):
     async def on_message(self, message: discord.Message):
         if not message.guild or not isinstance(message.author, discord.Member):
             return
-        if not await get_anti_werbung_enabled(message.guild.id):
+        if not await get_anti_hack_enabled(message.guild.id):
             return
-        if not _LINK_RE.search(message.content or ""):
+        if not _looks_shareable(message):
             return
         if await self._is_exempt(message.author):
             return
 
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        bucket = self._activity[message.guild.id][message.author.id]
+        bucket.append((now, message.channel.id))
+        while bucket and now - bucket[0][0] > WINDOW_SECONDS:
+            bucket.popleft()
+
+        distinct_channels = {ch for _, ch in bucket}
+        if len(distinct_channels) >= DISTINCT_CHANNEL_THRESHOLD:
+            bucket.clear()
+            await self._punish(message.guild, message.author, len(distinct_channels))
+
+    async def _punish(self, guild: discord.Guild, member: discord.Member, channel_count: int) -> None:
+        key = (guild.id, member.id)
+        if key in self._punishing:
+            return
+        self._punishing.add(key)
         try:
-            await message.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass
+            lang = await get_guild_language(guild.id)
 
-        await self._punish(message.guild, message.author, message.channel)
-
-    async def _punish(self, guild: discord.Guild, member: discord.Member,
-                       channel: discord.abc.Messageable) -> None:
-        lang = await get_guild_language(guild.id)
-        count = await bump_anti_werbung_strike(guild.id, member.id)
-
-        duration = ESCALATION.get(count)
-        if duration is not None:
-            consequence_key = f"antiwerbung.consequence_{count}"
-            action = "timeout"
             try:
-                await member.timeout(duration, reason=f"Anti-Werbung: unautorisierter Link (Verstoß Nr. {count})")
+                await member.send(t("antihack.kicked_dm", lang, guild=guild.name))
             except discord.Forbidden:
-                log.warning("Konnte %s in Guild %s nicht timeouten (fehlende Berechtigung).", member.id, guild.id)
-        else:
-            consequence_key = "antiwerbung.consequence_4"
-            action = "kick"
+                pass  # DMs geschlossen -- kein Blocker für den Kick
+
             try:
-                await member.kick(reason=f"Anti-Werbung: unautorisierter Link (Verstoß Nr. {count})")
+                await member.kick(reason="Anti-Hack: verdächtiges kanalübergreifendes Spam-Verhalten")
             except discord.Forbidden:
                 log.warning("Konnte %s in Guild %s nicht kicken (fehlende Berechtigung).", member.id, guild.id)
+                return
 
-        consequence_text = t(consequence_key, lang)
+            await log_punishment(guild.id, member.id, self.bot.user.id, "anti_hack_kick",
+                                  f"Automatisch: identisches/teilbares Verhalten in {channel_count} Kanälen")
 
-        try:
-            await member.send(t("antiwerbung.deleted_dm", lang, guild=guild.name, count=count,
-                                 consequence=consequence_text))
-        except discord.Forbidden:
-            pass
+            embed = base_embed("🚨 Anti-Hack" if lang == "de" else "🚨 Anti-hack")
+            embed.color = discord.Color.red()
+            embed.description = t("antihack.alert", lang, user=member.mention, count=channel_count)
 
-        await log_punishment(
-            guild.id, member.id, self.bot.user.id, f"anti_werbung_{action}",
-            f"Automatisch: unautorisierter Link (Verstoß Nr. {count})",
-        )
-
-        try:
-            await channel.send(t("antiwerbung.alert", lang, user=member.mention, count=count,
-                                  consequence=consequence_text))
-        except discord.Forbidden:
-            pass
-
-        async with get_session() as session:
-            settings = await session.get(GuildSettings, guild.id)
-            log_channel_id = settings.mod_log_channel_id if settings else 0
-        if log_channel_id:
-            log_channel = guild.get_channel(log_channel_id)
-            if log_channel and log_channel.id != getattr(channel, "id", None):
-                try:
-                    await log_channel.send(t("antiwerbung.alert", lang, user=member.mention, count=count,
-                                              consequence=consequence_text))
-                except discord.Forbidden:
-                    pass
+            async with get_session() as session:
+                settings = await session.get(GuildSettings, guild.id)
+                log_channel_id = settings.mod_log_channel_id if settings else 0
+            if log_channel_id:
+                channel = guild.get_channel(log_channel_id)
+                if channel:
+                    await channel.send(embed=embed)
+        finally:
+            self._punishing.discard(key)
 
     # ---------- Commands ----------
-    @commands.hybrid_group(name="antiwerbung", description="Anti-Werbung-System verwalten.")
+    @commands.hybrid_group(name="antihack", description="Anti-Hack-System verwalten.")
     @commands.guild_only()
-    async def antiwerbung(self, ctx: commands.Context):
+    async def antihack(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @antiwerbung.command(name="on", description="Aktiviert das Anti-Werbung-System.")
+    @antihack.command(name="on", description="Aktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antiwerbung_on(self, ctx: commands.Context):
+    async def antihack_on(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        await set_anti_werbung_enabled(ctx.guild.id, True)
-        await ctx.send(embed=success_embed(t("anti.enabled", lang, feature="Anti-Werbung")))
+        await set_anti_hack_enabled(ctx.guild.id, True)
+        await ctx.send(embed=success_embed(t("anti.enabled", lang, feature="Anti-Hack")))
 
-    @antiwerbung.command(name="off", description="Deaktiviert das Anti-Werbung-System.")
+    @antihack.command(name="off", description="Deaktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antiwerbung_off(self, ctx: commands.Context):
+    async def antihack_off(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        await set_anti_werbung_enabled(ctx.guild.id, False)
-        await ctx.send(embed=success_embed(t("anti.disabled", lang, feature="Anti-Werbung")))
+        await set_anti_hack_enabled(ctx.guild.id, False)
+        await ctx.send(embed=success_embed(t("anti.disabled", lang, feature="Anti-Hack")))
 
-    @commands.hybrid_command(name="antiwerbung_add", description="Erlaubt einem User oder einer Rolle, Links zu posten.")
+    @commands.hybrid_command(name="antihack_add", description="Nimmt einen User oder eine Rolle von der Anti-Hack-Erkennung aus.")
     @app_commands.describe(user="Optional: ein User", rolle="Optional: eine Rolle")
     @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antiwerbung_add(self, ctx: commands.Context, user: discord.Member = None, rolle: discord.Role = None):
-        await _add_exemption(ctx, "antiwerbung", "Anti-Werbung", user, rolle)
+    async def antihack_add(self, ctx: commands.Context, user: discord.Member = None, rolle: discord.Role = None):
+        await _add_exemption(ctx, "antihack", "Anti-Hack", user, rolle)
 
-    @commands.hybrid_command(name="antiwerbung_liste", description="Zeigt die Anti-Werbung-Ausnahmeliste.")
+    @commands.hybrid_command(name="antihack_liste", description="Zeigt die Anti-Hack-Ausnahmeliste.")
     @commands.guild_only()
-    async def antiwerbung_liste(self, ctx: commands.Context):
-        await _list_exemptions(ctx, "antiwerbung", "Anti-Werbung")
+    async def antihack_liste(self, ctx: commands.Context):
+        await _list_exemptions(ctx, "antihack", "Anti-Hack")
+
+
+async def _add_exemption(ctx: commands.Context, feature: str, label: str,
+                          user: discord.Member = None, rolle: discord.Role = None) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    if not user and not rolle:
+        await ctx.send(embed=error_embed(
+            "Gib entweder einen User oder eine Rolle an." if lang == "de"
+            else "Provide either a user or a role."))
+        return
+
+    target = user or rolle
+    target_type = "user" if user else "role"
+    target_mention = target.mention
+
+    added = await add_anti_exemption(ctx.guild.id, feature, target_type, target.id, ctx.author.id)
+    if added:
+        await ctx.send(embed=success_embed(t("anti.exempt_added", lang, target=target_mention, feature=label)))
+    else:
+        await ctx.send(embed=error_embed(t("anti.exempt_already", lang, target=target_mention, feature=label)))
+
+
+async def _list_exemptions(ctx: commands.Context, feature: str, label: str) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    entries = await get_anti_exemptions(ctx.guild.id, feature)
+    if not entries:
+        await ctx.send(embed=error_embed(t("anti.exempt_list_empty", lang, feature=label)))
+        return
+
+    lines = []
+    for e in entries:
+        mention = f"<@{e.target_id}>" if e.target_type == "user" else f"<@&{e.target_id}>"
+        lines.append(mention)
+
+    embed = base_embed(t("anti.exempt_list_title", lang, feature=label))
+    embed.description = "\n".join(lines[:50])
+    await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(AntiWerbung(bot))
+    await bot.add_cog(AntiHack(bot))

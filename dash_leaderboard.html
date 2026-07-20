@@ -1,52 +1,44 @@
-{% extends "admin_base.html" %}
-{% block title %}{{ group.name }} — Admin-Panel{% endblock %}
-{% block content %}
-<a href="/admin/groups" class="back-link">Zurück zu den Gruppen</a>
-<h1>{{ group.name }}</h1>
-
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Rechte dieser Gruppe</h2>
-    <form method="post" action="/admin/groups/{{ group.id }}/permissions" class="admin-form">
-        {% for perm in all_permissions %}
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#f5f6fa;">
-            <input type="checkbox" name="perm_{{ perm }}" value="on" {% if perm in permissions %}checked{% endif %}>
-            {{ perm }}
-        </label>
-        {% endfor %}
-        <button type="submit" class="btn btn-small">Speichern</button>
-    </form>
-</div>
-
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Mitglieder ({{ members|length }})</h2>
-    {% for m in members %}
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #262838;">
-        <span>{{ m.username }}</span>
-        <form method="post" action="/admin/groups/{{ group.id }}/members/{{ m.id }}/remove">
-            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-        </form>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin-Panel{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div class="admin-layout">
+        <nav class="admin-sidebar">
+            <div class="admin-brand">🛡️ Admin-Panel</div>
+            <a href="/admin">📊 Übersicht</a>
+            <a href="/admin/stats">📈 Statistiken</a>
+            <a href="/admin/servers">🌐 Server</a>
+            <a href="/admin/broadcast">📢 Ankündigungen</a>
+            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
+            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
+            <a href="/admin/users">👥 Dashboard-User</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
+            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
+            {% endif %}
+            <a href="/admin/system">💻 System</a>
+            <a href="/admin/news">📰 News</a>
+            <a href="/admin/account">👤 Mein Account</a>
+            <div class="admin-sidebar-footer">
+                <span>{{ admin.username if admin }}</span>
+                {% if operator_invite %}
+                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
+                {% endif %}
+                <a href="/admin/logout">Logout</a>
+            </div>
+        </nav>
+        <main class="admin-content">
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            {% block content %}{% endblock %}
+        </main>
     </div>
-    {% else %}
-    <p style="color:#9297ab;">Noch keine Mitglieder.</p>
-    {% endfor %}
-
-    {% if non_members %}
-    <form method="post" action="/admin/groups/{{ group.id }}/members/add" class="admin-form" style="margin-top:16px;">
-        <div>
-            <label for="admin_id">Admin hinzufügen</label>
-            <select name="admin_id" id="admin_id">
-                {% for a in non_members %}
-                <option value="{{ a.id }}">{{ a.username }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="btn btn-small">Hinzufügen</button>
-    </form>
-    {% endif %}
-</div>
-
-<form method="post" action="/admin/groups/{{ group.id }}/delete"
-      onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
-    <button type="submit" class="btn btn-small btn-ghost">Gruppe löschen</button>
-</form>
-{% endblock %}
+</body>
+</html>
