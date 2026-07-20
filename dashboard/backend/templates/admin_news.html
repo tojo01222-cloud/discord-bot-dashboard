@@ -1,23 +1,45 @@
-{% extends "base.html" %}
-{% block title %}Gewinnspiele — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}News — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Gewinnspiele — {{ guild.name }}</h1>
+<h1>News verwalten</h1>
+<p style="color:#9297ab; font-size:13px;">Wird öffentlich unter <code>/news</code> angezeigt.</p>
 
-{% if not giveaways %}
-<p style="color:#9297ab;">Noch keine Gewinnspiele gestartet (siehe <code>/giveaway start</code> in Discord).</p>
-{% else %}
-{% for g in giveaways %}
-<div style="padding:14px 0; border-bottom:1px solid #262838;">
-    <strong>{{ g.name }}</strong>
-    {% if g.ended %}
-    <span class="flash" style="padding:3px 10px; margin:0; background:#262838;">Beendet</span>
-    {% if g.winner_id %}<span style="color:#9297ab;"> — Gewinner: Discord-ID {{ g.winner_id }}</span>{% endif %}
-    {% else %}
-    <span class="flash flash-success" style="padding:3px 10px; margin:0;">Läuft</span>
-    <span style="color:#9297ab;"> — endet {{ g.ends_at.strftime('%d.%m.%Y %H:%M') }} UTC</span>
-    {% endif %}
+<div class="admin-card">
+    <h2 style="margin-bottom:12px;">Neuer Beitrag</h2>
+    <form method="post" action="/admin/news" class="admin-form">
+        <div>
+            <label for="title">Titel</label>
+            <input type="text" id="title" name="title" required>
+        </div>
+        <div>
+            <label for="content">Inhalt</label>
+            <textarea id="content" name="content" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-small">Veröffentlichen</button>
+    </form>
 </div>
+
+{% for post in posts %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <strong>{{ post.title }}</strong>
+            <span style="color:#9297ab; font-size:12px;"> — {{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+            <p style="margin-top:8px;">{{ post.content }}</p>
+        </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <form method="post" action="/admin/news/{{ post.id }}/toggle">
+            <input type="hidden" name="published" value="{{ '' if post.published else 'on' }}">
+            <button type="submit" class="btn btn-small btn-ghost">{{ "Verbergen" if post.published else "Veröffentlichen" }}</button>
+        </form>
+        <form method="post" action="/admin/news/{{ post.id }}/delete"
+              onsubmit="return confirm('Diesen Beitrag wirklich löschen?');">
+            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine News-Beiträge.</p>
 {% endfor %}
-{% endif %}
 {% endblock %}
