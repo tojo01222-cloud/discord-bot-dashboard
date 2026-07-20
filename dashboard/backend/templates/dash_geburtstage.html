@@ -1,52 +1,27 @@
-{% extends "admin_base.html" %}
-{% block title %}{{ group.name }} — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Geburtstage — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/admin/groups" class="back-link">Zurück zu den Gruppen</a>
-<h1>{{ group.name }}</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Geburtstage — {{ guild.name }}</h1>
 
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Rechte dieser Gruppe</h2>
-    <form method="post" action="/admin/groups/{{ group.id }}/permissions" class="admin-form">
-        {% for perm in all_permissions %}
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#f5f6fa;">
-            <input type="checkbox" name="perm_{{ perm }}" value="on" {% if perm in permissions %}checked{% endif %}>
-            {{ perm }}
-        </label>
-        {% endfor %}
-        <button type="submit" class="btn btn-small">Speichern</button>
-    </form>
-</div>
-
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Mitglieder ({{ members|length }})</h2>
-    {% for m in members %}
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #262838;">
-        <span>{{ m.username }}</span>
-        <form method="post" action="/admin/groups/{{ group.id }}/members/{{ m.id }}/remove">
-            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-        </form>
+<form method="post" action="/dashboard/{{ guild.id }}/geburtstage/kanal" class="settings-form">
+    <div class="field">
+        <label>Gratulations-Kanal</label>
+        <select name="channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
     </div>
-    {% else %}
-    <p style="color:#9297ab;">Noch keine Mitglieder.</p>
-    {% endfor %}
-
-    {% if non_members %}
-    <form method="post" action="/admin/groups/{{ group.id }}/members/add" class="admin-form" style="margin-top:16px;">
-        <div>
-            <label for="admin_id">Admin hinzufügen</label>
-            <select name="admin_id" id="admin_id">
-                {% for a in non_members %}
-                <option value="{{ a.id }}">{{ a.username }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="btn btn-small">Hinzufügen</button>
-    </form>
-    {% endif %}
-</div>
-
-<form method="post" action="/admin/groups/{{ group.id }}/delete"
-      onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
-    <button type="submit" class="btn btn-small btn-ghost">Gruppe löschen</button>
+    <button type="submit" class="btn btn-small">Speichern</button>
 </form>
+
+<h2 style="margin-top:32px;">Hinterlegte Geburtstage ({{ birthdays|length }})</h2>
+<p style="font-size:13px;">User hinterlegen ihren eigenen Geburtstag über <code>/geburtstag setzen</code> in Discord.</p>
+{% for b in birthdays %}
+<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ b.day }}.{{ b.month }} — Discord-ID {{ b.user_id }}</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Geburtstage hinterlegt.</p>
+{% endfor %}
 {% endblock %}
