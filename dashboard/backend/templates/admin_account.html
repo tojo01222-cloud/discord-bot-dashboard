@@ -1,18 +1,35 @@
-{% extends "admin_base.html" %}
-{% block title %}Mein Account — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}{{ feature_label }}-Ausnahmen — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Mein Account</h1>
-<p style="color:#9297ab;">Angemeldet als <strong>{{ admin.username }}</strong>{% if admin.is_superadmin %} (Superadmin){% endif %}</p>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>{{ feature_label }}-Ausnahmen — {{ guild.name }}</h1>
+<p>User oder Rollen auf dieser Liste lösen die {{ feature_label }}-Erkennung nie aus (Server-Owner und Administratoren sind immer automatisch ausgenommen).</p>
 
-<form method="post" action="/admin/account" class="admin-form" style="margin-top:24px;">
-    <div>
-        <label for="new_password">Neues Passwort</label>
-        <input type="password" id="new_password" name="new_password" required minlength="8">
+{% if not entries %}
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% else %}
+{% for e in entries %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>{{ "Rolle" if e.target_type == "role" else "User" }}-ID {{ e.target_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen/{{ e.target_type }}/{{ e.target_id }}/entfernen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% endfor %}
+{% endif %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="target_type">Typ</label>
+        <select name="target_type" id="target_type">
+            <option value="user">User</option>
+            <option value="role">Rolle</option>
+        </select>
     </div>
-    <div>
-        <label for="new_password_repeat">Neues Passwort wiederholen</label>
-        <input type="password" id="new_password_repeat" name="new_password_repeat" required minlength="8">
+    <div class="field">
+        <label for="target_id">Discord-ID (User oder Rolle)</label>
+        <input type="text" id="target_id" name="target_id" required placeholder="z.B. 123456789012345678">
     </div>
-    <button type="submit" class="btn">Passwort ändern</button>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
 </form>
 {% endblock %}

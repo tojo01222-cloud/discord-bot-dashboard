@@ -1,26 +1,28 @@
 {% extends "base.html" %}
-{% block title %}{{ wt(site_lang, 'guilds_title') }} — Bot Dashboard{% endblock %}
+{% block title %}Anti-Nuke-Whitelist — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>{{ wt(site_lang, 'guilds_title') }}</h1>
-<p>{{ wt(site_lang, 'guilds_subtitle') }}</p>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Anti-Nuke-Whitelist — {{ guild.name }}</h1>
+<p style="color:#9297ab; font-size:13px;">User auf dieser Liste lösen die Anti-Nuke-Erkennung nie aus (der Server-Owner ist immer automatisch ausgenommen).</p>
 
-<div class="guild-grid">
-    {% for guild in manageable_guilds %}
-    <div class="guild-card {% if not guild.bot_present %}guild-card-disabled{% endif %}">
-        {% if guild.icon %}
-        <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png" alt="">
-        {% else %}
-        <div class="guild-icon-placeholder">{{ guild.name[0] }}</div>
-        {% endif %}
-        <span class="guild-name">{{ guild.name }}</span>
-        {% if guild.bot_present %}
-        <a href="/dashboard/{{ guild.id }}" class="btn btn-small">{{ wt(site_lang, 'guilds_manage_btn') }}</a>
-        {% else %}
-        <a href="{{ invite_url }}&guild_id={{ guild.id }}" target="_blank" class="btn btn-small btn-ghost">{{ wt(site_lang, 'guilds_invite_btn') }}</a>
-        {% endif %}
-    </div>
-    {% else %}
-    <p>{{ wt(site_lang, 'guilds_empty') }}</p>
-    {% endfor %}
+{% if not trusted %}
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% else %}
+{% for t in trusted %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>Discord-ID {{ t.user_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste/{{ t.user_id }}/entfernen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
 </div>
+{% endfor %}
+{% endif %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="discord_id">Discord-User-ID</label>
+        <input type="text" id="discord_id" name="discord_id" required placeholder="z.B. 123456789012345678">
+    </div>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
+</form>
 {% endblock %}

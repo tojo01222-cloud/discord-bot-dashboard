@@ -1,29 +1,32 @@
-{% extends "base.html" %}
-{% block title %}Bewerbung von {{ application.applicant_username }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Berechtigungsgruppen — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}/bewerbungen" class="back-link">← Zurück zur Liste</a>
-<h1>Bewerbung von {{ application.applicant_username }}</h1>
-<p style="color:#9297ab; font-size:13px;">Eingereicht am {{ application.submitted_at.strftime('%d.%m.%Y %H:%M') }} — Status: {{ application.status }}</p>
+<h1>Berechtigungsgruppen</h1>
 
-<div style="display:flex; flex-direction:column; gap:20px; margin-top:24px;">
-    {% for ans in answers %}
-    <div style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:20px;">
-        <div style="color:#9297ab; font-size:13px; margin-bottom:8px;">{{ ans.question_text }}</div>
-        <div>{{ ans.answer_text }}</div>
+<div class="admin-card">
+    <h2 style="font-size:16px; margin-bottom:12px;">Neue Gruppe anlegen</h2>
+    <form method="post" action="/admin/groups" class="admin-form">
+        <div>
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required placeholder="z.B. Support-Team">
+        </div>
+        <button type="submit" class="btn btn-small">Anlegen</button>
+    </form>
+</div>
+
+{% if not groups_with_perms %}
+<p style="color:#9297ab;">Noch keine Gruppen angelegt.</p>
+{% else %}
+{% for entry in groups_with_perms %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <strong>{{ entry.group.name }}</strong>
+            <span style="color:#9297ab; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
+        </div>
+        <a href="/admin/groups/{{ entry.group.id }}" class="btn btn-small btn-ghost">Verwalten</a>
     </div>
-    {% endfor %}
 </div>
-
-{% if application.status == "pending" %}
-<div style="display:flex; gap:12px; margin-top:28px;">
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="accepted">
-        <button type="submit" class="btn">Annehmen</button>
-    </form>
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="rejected">
-        <button type="submit" class="btn btn-ghost">Ablehnen</button>
-    </form>
-</div>
+{% endfor %}
 {% endif %}
 {% endblock %}

@@ -1,21 +1,20 @@
-{% extends "base.html" %}
-{% block title %}Leaderboard — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Leaderboard — {{ guild.name }}</h1>
+<h1>Ankündigungs-Historie</h1>
+<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
 
-{% if not top %}
-<p style="color:#9297ab;">Noch keine XP-Daten.</p>
+{% if not announcements %}
+<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
 {% else %}
-<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
+<div class="admin-card">
     <table class="admin-table">
-        <tr><th>#</th><th>User</th><th>Level</th><th>XP</th></tr>
-        {% for entry in top %}
+        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
+        {% for a in announcements %}
         <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ entry.user_id }}</td>
-            <td>{{ entry.level }}</td>
-            <td>{{ entry.xp }}</td>
+            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
+            <td>{{ a.guild_count }}</td>
+            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
         </tr>
         {% endfor %}
     </table>

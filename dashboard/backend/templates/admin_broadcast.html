@@ -1,17 +1,28 @@
-{% extends "admin_base.html" %}
-{% block title %}Ankündigungen — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Panel senden — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Globale Ankündigung</h1>
-<p style="color:#9297ab; font-size:14px;">
-    Wird an den eingerichteten Ankündigungs-Kanal auf allen {{ guild_count }} Servern gesendet
-    (nur Server, wo im Server-Dashboard ein Ankündigungs-Kanal ausgewählt wurde).
-</p>
+<a href="/dashboard/{{ guild.id }}/tickets/kategorien" class="back-link">← Zurück zu den Ticket-Arten</a>
+<h1>Ticket-Panel senden — {{ guild.name }}</h1>
+<p style="font-size:13px;">Sendet ein Panel mit Auswahlmenü aller eingerichteten Ticket-Arten in den gewählten Kanal.
+    Aktuell {{ categories|length }} Ticket-Art(en) eingerichtet.</p>
 
-<form method="post" action="/admin/broadcast" class="admin-form">
-    <div>
-        <label for="message">Nachricht</label>
-        <textarea id="message" name="message" required placeholder="Deine Ankündigung..."></textarea>
+<form method="post" action="/dashboard/{{ guild.id }}/tickets/panel-senden" class="settings-form">
+    <div class="field">
+        <label>Zielkanal</label>
+        <select name="channel_id" required>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}">#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
     </div>
-    <button type="submit" class="btn">An alle Server senden</button>
+    <div class="field">
+        <label>Design</label>
+        <select name="design">
+            {% for d in designs %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-pink">📨 Panel senden</button>
 </form>
 {% endblock %}

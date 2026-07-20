@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ wt(site_lang, 'guilds_title') }} — Bot Dashboard{% endblock %}
+{% block content %}
+<h1>{{ wt(site_lang, 'guilds_title') }}</h1>
+<p>{{ wt(site_lang, 'guilds_subtitle') }}</p>
+
+<div class="guild-grid">
+    {% for guild in manageable_guilds %}
+    <div class="guild-card {% if not guild.bot_present %}guild-card-disabled{% endif %}">
+        {% if guild.icon %}
+        <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png" alt="">
+        {% else %}
+        <div class="guild-icon-placeholder">{{ guild.name[0] }}</div>
+        {% endif %}
+        <span class="guild-name">{{ guild.name }}</span>
+        {% if guild.bot_present %}
+        <a href="/dashboard/{{ guild.id }}" class="btn btn-small">{{ wt(site_lang, 'guilds_manage_btn') }}</a>
+        {% else %}
+        <a href="{{ invite_url }}&guild_id={{ guild.id }}" target="_blank" class="btn btn-small btn-ghost">{{ wt(site_lang, 'guilds_invite_btn') }}</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>{{ wt(site_lang, 'guilds_empty') }}</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,24 +1,36 @@
-{% extends "admin_base.html" %}
-{% block title %}Übersicht — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Bewerbungen — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Übersicht</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
+<h1>Bewerbungen — {{ guild.name }}</h1>
 
-{% if maintenance_mode %}
-<div class="flash flash-error">Der Bot befindet sich aktuell im Wartungsmodus.</div>
-{% endif %}
+<form method="get" action="/dashboard/{{ guild.id }}/bewerbungen" style="margin-bottom:20px;">
+    <select name="status" onchange="this.form.submit()"
+            style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:8px;">
+        <option value="" {% if not status %}selected{% endif %}>Alle</option>
+        <option value="pending" {% if status == "pending" %}selected{% endif %}>Offen</option>
+        <option value="accepted" {% if status == "accepted" %}selected{% endif %}>Angenommen</option>
+        <option value="rejected" {% if status == "rejected" %}selected{% endif %}>Abgelehnt</option>
+    </select>
+</form>
 
-<div class="admin-stat-grid">
-    <div class="admin-stat">
-        <div class="value">{{ guild_count }}</div>
-        <div class="label">Server mit Bot</div>
+{% if not applications %}
+<p style="color:#9297ab;">Keine Bewerbungen gefunden.</p>
+{% else %}
+<div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
+    {% for a in applications %}
+    <div style="display:flex; justify-content:space-between; align-items:center;
+                background:#14151f; border:1px solid #262838; border-radius:10px; padding:18px 22px;">
+        <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}" style="text-decoration:none; color:inherit;">
+            <div style="font-weight:700; color:#f5f6fa;">{{ a.applicant_username }}</div>
+            <div style="color:#9297ab; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
+        </a>
+        <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}/loeschen"
+              onsubmit="return confirm('Diese Bewerbung wirklich löschen?');">
+            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
+        </form>
     </div>
-    <div class="admin-stat">
-        <div class="value">{{ total_members }}</div>
-        <div class="label">Mitglieder gesamt (aller Server)</div>
-    </div>
-    <div class="admin-stat">
-        <div class="value">{{ "Aktiv" if not maintenance_mode else "Wartung" }}</div>
-        <div class="label">Bot-Status</div>
-    </div>
+    {% endfor %}
 </div>
+{% endif %}
 {% endblock %}

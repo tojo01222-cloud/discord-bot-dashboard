@@ -1,32 +1,24 @@
-{% extends "admin_base.html" %}
-{% block title %}Berechtigungsgruppen — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Strafverzeichnis — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Berechtigungsgruppen</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Strafverzeichnis — {{ guild.name }}</h1>
 
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Neue Gruppe anlegen</h2>
-    <form method="post" action="/admin/groups" class="admin-form">
-        <div>
-            <label for="name">Name</label>
-            <input type="text" id="name" name="name" required placeholder="z.B. Support-Team">
-        </div>
-        <button type="submit" class="btn btn-small">Anlegen</button>
-    </form>
-</div>
-
-{% if not groups_with_perms %}
-<p style="color:#9297ab;">Noch keine Gruppen angelegt.</p>
+{% if not punishments %}
+<p style="color:#9297ab;">Keine aktiven Strafen.</p>
 {% else %}
-{% for entry in groups_with_perms %}
-<div class="admin-card">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <strong>{{ entry.group.name }}</strong>
-            <span style="color:#9297ab; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
-        </div>
-        <a href="/admin/groups/{{ entry.group.id }}" class="btn btn-small btn-ghost">Verwalten</a>
-    </div>
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
+    <table class="admin-table">
+        <tr><th>Typ</th><th>User</th><th>Grund</th><th>Datum</th></tr>
+        {% for p in punishments %}
+        <tr>
+            <td>{{ p.type }}</td>
+            <td>{{ p.user_id }}</td>
+            <td>{{ p.reason }}</td>
+            <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
-{% endfor %}
 {% endif %}
 {% endblock %}

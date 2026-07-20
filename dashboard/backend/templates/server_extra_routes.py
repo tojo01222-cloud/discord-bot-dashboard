@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="{{ site_lang|default('en') }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bot Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a href="/" class="brand">Bot Dashboard</a>
+            <nav style="display:flex; align-items:center; gap:18px;">
+                <a href="/apply" class="logout-link" style="font-weight:700;">✨ {{ wt(site_lang, 'nav_apply') }}</a>
+                <a href="/news" class="logout-link">{{ wt(site_lang, 'nav_news') }}</a>
+                <select onchange="window.location.href=this.value" title="{{ wt(site_lang, 'lang_switch_label') }}"
+                        style="background:transparent; color:var(--text-dim); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:13px; cursor:pointer;">
+                    <option value="/set-site-language?lang=en&next={{ request.url.path }}" {% if site_lang == 'en' %}selected{% endif %}>🇬🇧 EN</option>
+                    <option value="/set-site-language?lang=de&next={{ request.url.path }}" {% if site_lang == 'de' %}selected{% endif %}>🇩🇪 DE</option>
+                    <option value="/set-site-language?lang=es&next={{ request.url.path }}" {% if site_lang == 'es' %}selected{% endif %}>🇪🇸 ES</option>
+                </select>
+                {% if user %}
+                <div class="user-chip">
+                    {% if user.avatar_hash %}
+                    <img src="https://cdn.discordapp.com/avatars/{{ user.discord_id }}/{{ user.avatar_hash }}.png" alt="">
+                    {% endif %}
+                    <span>{{ user.username }}</span>
+                    <a href="/admin/login" class="logout-link" style="margin-left:14px;">{{ wt(site_lang, 'nav_admin_panel') }}</a>
+                    <a href="/logout" class="logout-link">{{ wt(site_lang, 'nav_logout') }}</a>
+                </div>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main class="content">
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+    </main>
+    <footer style="text-align:center; padding:24px; font-size:12px; color:#9297ab;">
+        {% if operator_invite %}
+        <a href="{{ operator_invite }}" target="_blank" class="btn btn-small btn-ghost" style="margin-bottom:12px; display:inline-block;">{{ wt(site_lang, 'footer_join_discord') }}</a>
+        <br>
+        {% endif %}
+        <a href="/impressum" style="color:#9297ab;">Impressum</a> ·
+        <a href="/datenschutz" style="color:#9297ab;">Datenschutz</a> ·
+        <a href="/urheberrecht" style="color:#9297ab;">Urheberrecht</a>
+        <br>
+        <span style="color:#a29bc4;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}. Alle Rechte vorbehalten.</span>
+    </footer>
+</body>
+</html>
