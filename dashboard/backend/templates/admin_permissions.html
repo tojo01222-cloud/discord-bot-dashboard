@@ -23,12 +23,12 @@
 <div class="admin-card">
     <h2 style="font-size:16px; margin-bottom:12px;">Bestehende Admins</h2>
     {% for entry in admins_with_perms %}
-    <div style="padding:14px 0; border-bottom:1px solid #2a2a2a;">
+    <div style="padding:14px 0; border-bottom:1px solid #262838;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
                 <strong>{{ entry.user.username }}</strong>
                 {% if entry.user.last_login_at %}
-                <span style="color:#a3a3a3; font-size:12px;"> — letzter Login: {{ entry.user.last_login_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                <span style="color:#9297ab; font-size:12px;"> — letzter Login: {{ entry.user.last_login_at.strftime('%d.%m.%Y %H:%M') }}</span>
                 {% endif %}
             </div>
             {% if not entry.user.is_superadmin %}
@@ -42,7 +42,7 @@
         <span class="perm-tag perm-tag-on">Superadmin (alle Rechte)</span>
         {% else %}
         {% if entry.groups %}
-        <div style="margin-top:8px; font-size:12px; color:#a3a3a3;">
+        <div style="margin-top:8px; font-size:12px; color:#9297ab;">
             Gruppen: {% for g in entry.groups %}{{ g.name }}{% if not loop.last %}, {% endif %}{% endfor %}
         </div>
         {% endif %}

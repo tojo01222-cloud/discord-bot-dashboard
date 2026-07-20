@@ -2,17 +2,23 @@
 Level-System.
 
 - Vergibt automatisch XP pro Nachricht (mit Cooldown gegen Spam-Farming)
-- /rank [user]                      -- zeigt Level/XP
+- /rank [user]                      -- zeigt Level/XP mit Fortschrittsbalken und Serverrang
 - /leaderboard                       -- Top 10 des Servers
 - /levelrolle add <level> <rolle>     -- Rang-Rolle ab einem bestimmten Level (SERVER_ADMIN)
 - /levelrolle list
 - /levelrolle remove <id>
+- /xp add|remove|set|reset <user>     -- XP manuell verwalten (SERVER_ADMIN)
 
 WICHTIGE LEKTION aus einem früheren Bug (Anti-Spam fragte bei jeder Nachricht
 die Datenbank ab): der Cooldown-Check hier läuft über einen In-Memory-Cache,
 NICHT über eine Datenbankabfrage bei jeder einzelnen Nachricht. Nur wenn der
 Cooldown im Cache bereits abgelaufen scheint, wird überhaupt ein
 Datenbank-Zugriff gemacht (und dort nochmal geprüft, als Absicherung).
+
+Bug-Fix: /xp add (oder ein sehr großer XP-Batzen) kann mehrere Level auf
+einmal überspringen. Vorher wurden dabei nur Rang-Rollen für das exakt neue
+Level vergeben -- alle dazwischenliegenden Level-Rollen blieben unvergeben.
+Jetzt werden alle Rollen im Bereich (altes Level, neues Level] vergeben.
 """
 import random
 import time
@@ -31,6 +37,9 @@ from bot.utils.db_helpers import (
     add_level_role_reward,
     get_level_role_rewards,
     remove_level_role_reward,
+    set_level_xp,
+    adjust_level_xp,
+    reset_level_xp,
     XP_PER_LEVEL,
 )
 
@@ -40,6 +49,13 @@ XP_MIN, XP_MAX = 15, 25
 # In-Memory-Cache: (guild_id, user_id) -> Zeitstempel der letzten XP-Vergabe.
 # Verhindert, dass jede einzelne Nachricht die Datenbank abfragt.
 _last_xp_time: dict[tuple[int, int], float] = {}
+
+
+def _progress_bar(progress: int, total: int, length: int = 12) -> str:
+    """Baut einen einfachen Text-Fortschrittsbalken, z.B. '█████░░░░░░░' -- rein
+    optisch, damit /rank auf einen Blick verständlich ist statt nur Zahlen zu zeigen."""
+    filled = max(0, min(length, round(length * progress / total))) if total else 0
+    return "█" * filled + "░" * (length - filled)
 
 
 class Level(commands.Cog):
@@ -63,7 +79,7 @@ class Level(commands.Cog):
         if result is None:
             return  # DB-seitiger Cooldown-Check hat trotzdem abgelehnt (z.B. nach Bot-Neustart)
 
-        new_xp, new_level, leveled_up = result
+        new_xp, new_level, old_level, leveled_up = result
         if not leveled_up:
             return
 
@@ -78,8 +94,12 @@ class Level(commands.Cog):
         except discord.Forbidden:
             pass
 
+        # Bug-Fix: vorher wurden nur Rollen für GENAU new_level vergeben. Bei
+        # einem Mehrfach-Level-Sprung (z.B. durch /xp add) wurden dazwischen
+        # liegende Rang-Rollen dadurch nie vergeben. Jetzt werden alle Rollen
+        # für (old_level, new_level] vergeben.
         rewards = await get_level_role_rewards(message.guild.id)
-        matching = [r for r in rewards if r.level == new_level]
+        matching = [r for r in rewards if old_level < r.level <= new_level]
         for reward in matching:
             role = message.guild.get_role(reward.role_id)
             if role and isinstance(message.author, discord.Member):
@@ -98,11 +118,25 @@ class Level(commands.Cog):
 
         current_level_floor = entry.level * XP_PER_LEVEL
         progress = entry.xp - current_level_floor
+        bar = _progress_bar(progress, XP_PER_LEVEL)
+
+        # Serverrang: Position in der vollständigen Leaderboard-Reihenfolge, nicht
+        # nur unter den Top 10 -- gibt auch Usern außerhalb der Top 10 Kontext.
+        full_board = await get_leaderboard(ctx.guild.id, limit=10_000)
+        rank_position = next((i + 1 for i, e in enumerate(full_board) if e.user_id == target.id), None)
+        rank_text = f"#{rank_position}" if rank_position else "—"
 
         embed = base_embed(f"📊 {target.display_name}")
+        embed.set_thumbnail(url=target.display_avatar.url)
         embed.add_field(name="Level", value=str(entry.level), inline=True)
-        embed.add_field(name="XP", value=f"{entry.xp} ({progress}/{XP_PER_LEVEL} bis zum nächsten Level)"
-                         if lang == "de" else f"{entry.xp} ({progress}/{XP_PER_LEVEL} to next level)", inline=True)
+        embed.add_field(name="Rang" if lang == "de" else "Rank", value=rank_text, inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Zeilenumbruch im 3er-Grid
+        embed.add_field(
+            name="XP",
+            value=(f"{bar}\n{entry.xp} XP · {progress}/{XP_PER_LEVEL} bis zum nächsten Level" if lang == "de"
+                   else f"{bar}\n{entry.xp} XP · {progress}/{XP_PER_LEVEL} to next level"),
+            inline=False,
+        )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="leaderboard", description="Zeigt die Top 10 nach XP.")
@@ -166,6 +200,71 @@ class Level(commands.Cog):
             await ctx.send(embed=success_embed("Entfernt" if lang == "de" else "Removed"))
         else:
             await ctx.send(embed=error_embed("ID nicht gefunden." if lang == "de" else "ID not found."))
+
+    # ---------- XP manuell verwalten ----------
+    @commands.hybrid_group(name="xp", description="XP eines Users manuell verwalten.")
+    @commands.guild_only()
+    async def xp(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @xp.command(name="add", description="Fügt einem User manuell XP hinzu (z.B. als Belohnung).")
+    @app_commands.describe(member="Der User", betrag="Wie viel XP hinzugefügt wird")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def xp_add(self, ctx: commands.Context, member: discord.Member, betrag: int):
+        await self._xp_adjust(ctx, member, betrag)
+
+    @xp.command(name="remove", description="Zieht einem User manuell XP ab.")
+    @app_commands.describe(member="Der User", betrag="Wie viel XP abgezogen wird")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def xp_remove(self, ctx: commands.Context, member: discord.Member, betrag: int):
+        await self._xp_adjust(ctx, member, -abs(betrag))
+
+    async def _xp_adjust(self, ctx: commands.Context, member: discord.Member, delta: int) -> None:
+        lang = await get_guild_language(ctx.guild.id)
+        old_xp, new_xp, old_level, new_level = await adjust_level_xp(ctx.guild.id, member.id, delta)
+
+        if new_level > old_level:
+            rewards = await get_level_role_rewards(ctx.guild.id)
+            for reward in [r for r in rewards if old_level < r.level <= new_level]:
+                role = ctx.guild.get_role(reward.role_id)
+                if role:
+                    try:
+                        await member.add_roles(role, reason=f"XP manuell angepasst von {ctx.author}")
+                    except discord.Forbidden:
+                        pass
+
+        sign = "+" if delta >= 0 else ""
+        await ctx.send(embed=success_embed(
+            "XP angepasst" if lang == "de" else "XP adjusted",
+            f"{member.mention}: {old_xp} → {new_xp} XP ({sign}{delta}), Level {old_level} → {new_level}",
+        ))
+
+    @xp.command(name="set", description="Setzt die XP eines Users auf einen festen Wert.")
+    @app_commands.describe(member="Der User", betrag="Der neue XP-Wert")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def xp_set(self, ctx: commands.Context, member: discord.Member, betrag: int):
+        lang = await get_guild_language(ctx.guild.id)
+        if betrag < 0:
+            await ctx.send(embed=error_embed("Der XP-Wert darf nicht negativ sein." if lang == "de"
+                                              else "XP value can't be negative."))
+            return
+        new_xp, new_level = await set_level_xp(ctx.guild.id, member.id, betrag)
+        await ctx.send(embed=success_embed(
+            "XP gesetzt" if lang == "de" else "XP set",
+            f"{member.mention}: {new_xp} XP, Level {new_level}",
+        ))
+
+    @xp.command(name="reset", description="Setzt die XP und das Level eines Users auf 0 zurück.")
+    @app_commands.describe(member="Der User")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def xp_reset(self, ctx: commands.Context, member: discord.Member):
+        lang = await get_guild_language(ctx.guild.id)
+        await reset_level_xp(ctx.guild.id, member.id)
+        await ctx.send(embed=success_embed(
+            "Zurückgesetzt" if lang == "de" else "Reset",
+            f"{member.mention}: 0 XP, Level 0",
+        ))
 
 
 async def setup(bot: commands.Bot):

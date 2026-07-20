@@ -20,7 +20,9 @@ class GuildSettings(Base):
     __tablename__ = "guild_settings"
 
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    language: Mapped[str] = mapped_column(String(2), default="de")  # "de" oder "en"
+    language: Mapped[str] = mapped_column(String(2), default="en")  # "de" oder "en" -- Standard beim
+    # Bot-Beitritt ist Englisch (siehe Config.DEFAULT_LANGUAGE und get_or_create_guild_settings());
+    # diese Spalten-Default ist nur ein Sicherheitsnetz, falls eine Zeile je ohne diesen Weg entsteht.
 
     # Log-/Funktionskanäle (0 = nicht gesetzt)
     mod_log_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -31,12 +33,30 @@ class GuildSettings(Base):
     waiting_room_notify_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
     music_bound_voice_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
 
+    # Zuletzt aktiver Radiosender (Genre-Schlüssel aus RADIO_STREAMS, "" = keiner).
+    # Wird bei jedem erfolgreichen /radio gespeichert und beim (Wieder-)Beitritt
+    # zum gebundenen Musikkanal automatisch fortgesetzt -- auch nach /stop, einem
+    # Kick aus dem Kanal oder einem kompletten Bot-Neustart, siehe musik.py.
+    music_last_genre: Mapped[str] = mapped_column(String(30), default="")
+
     # Anti-Nuke / Anti-Spam ein/aus
     anti_nuke_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     anti_spam_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Anti-Hack (erkennt vermutlich gekaperte Accounts über kanalübergreifenden
+    # Spam identischer Inhalte) und Anti-Werbung (löscht unautorisierte Links)
+    # -- beide standardmäßig AUS, da sie automatisch Timeouts/Kicks auslösen
+    # können und das ausdrücklich pro Server aktiviert werden soll.
+    anti_hack_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    anti_werbung_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Auto-Role (0 = keine)
+    # Auto-Role: "autorole_id" = für normale (menschliche) Mitglieder beim Beitritt,
+    # "autorole_bot_id" = für Bot-/App-Accounts beim Beitritt, "autorole_admin_id" =
+    # wird automatisch vergeben/entzogen, sobald ein Mitglied Administrator-Rechte
+    # bekommt/verliert (auch nachträglich über eine andere Rolle) -- siehe
+    # bot/cogs/autorole.py. Alle drei 0 = nicht eingerichtet.
     autorole_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    autorole_bot_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    autorole_admin_id: Mapped[int] = mapped_column(BigInteger, default=0)
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
@@ -144,9 +164,36 @@ class Ticket(Base):
     creator_id: Mapped[int] = mapped_column(BigInteger, index=True)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open, closed
     design: Mapped[str] = mapped_column(String(20), default="standard")
+    # Verweist auf TicketCategory.id (0 = kein Ticket-Typ gewählt / altes
+    # Einzel-Button-Panel ohne Typen-Auswahl). Bewusst KEIN ForeignKey-Constraint,
+    # damit ein späteres Löschen eines Ticket-Typs alte, bereits geschlossene
+    # Tickets nicht invalidiert -- die Historie bleibt so immer lesbar.
+    category_id: Mapped[int] = mapped_column(Integer, default=0)
     claimed_by: Mapped[int] = mapped_column(BigInteger, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TicketCategory(Base):
+    """Ein konfigurierbarer Ticket-Typ (z.B. 'Support', 'Bug-Report',
+    'Beschwerde', 'Bewerbung'), zwischen denen Nutzer beim Öffnen eines
+    Tickets per Auswahlmenü wählen können -- nicht zu verwechseln mit
+    GuildSettings.ticket_category_id, das die DISCORD-Kanalkategorie meint,
+    in der Ticket-Kanäle standardmäßig entstehen. Jeder Ticket-Typ kann
+    optional eine EIGENE Discord-Kanalkategorie haben (channel_category_id),
+    z.B. damit Bewerbungs-Tickets in einer anderen Kategorie landen als
+    Support-Tickets. 0 = benutzt stattdessen die Standard-Kategorie."""
+    __tablename__ = "ticket_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    emoji: Mapped[str] = mapped_column(String(20), default="🎫")
+    description: Mapped[str] = mapped_column(String(150), default="")
+    color_hex: Mapped[str] = mapped_column(String(7), default="")  # z.B. "#5865F2", "" = Design-Standardfarbe
+    channel_category_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
 
 class AdminUser(Base):
@@ -365,3 +412,75 @@ class ApplicationNotifyChannel(Base):
 
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+# ---------- Anti-Hack / Anti-Werbung ----------
+
+class AntiExemption(Base):
+    """Von einem Anti-System (feature='antihack' oder 'antiwerbung') ausgenommene
+    User oder Rollen -- EIN gemeinsames Tabellenschema für beide Systeme (und
+    für künftige weitere /anti...-Systeme), damit /..._add und /..._liste
+    überall gleich funktionieren."""
+    __tablename__ = "anti_exemptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    feature: Mapped[str] = mapped_column(String(20), index=True)  # "antihack" oder "antiwerbung"
+    target_type: Mapped[str] = mapped_column(String(10))  # "user" oder "role"
+    target_id: Mapped[int] = mapped_column(BigInteger)
+    added_by: Mapped[int] = mapped_column(BigInteger)
+    added_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class AntiWerbungStrike(Base):
+    """Zählt Anti-Werbung-Verstöße pro User für die Eskalationsstufen
+    (1. Mal 1h Timeout, 2. Mal 1d, 3. Mal 7d, 4. Mal Kick)."""
+    __tablename__ = "anti_werbung_strikes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    last_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class RegisterAccessRole(Base):
+    """Rollen, die (zusätzlich zu TEAM/MODERATOR/SERVER_ADMIN) das
+    Strafregister (/strafregister) einsehen dürfen -- vergeben ausschließlich
+    über /strafregister_recht_geben (SERVER_ADMIN)."""
+    __tablename__ = "register_access_roles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    role_id: Mapped[int] = mapped_column(BigInteger)
+    granted_by: Mapped[int] = mapped_column(BigInteger)
+    granted_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class NewsPost(Base):
+    """Website-weite News, ausschließlich über das Admin-Panel verwaltet
+    (nicht pro Discord-Server, sondern für die gesamte Dashboard-Webseite --
+    z.B. Update-Ankündigungen, Wartungshinweise)."""
+    __tablename__ = "news_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(150))
+    content: Mapped[str] = mapped_column(Text)
+    created_by_admin_id: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class StaffNote(Base):
+    """Team-interne Notizen zu einem User (nicht sichtbar für den User selbst,
+    nur fürs Team) -- z.B. 'wurde schon mal mündlich verwarnt', Kontext für
+    künftige Moderations-Entscheidungen, unabhängig vom offiziellen
+    Strafverzeichnis."""
+    __tablename__ = "staff_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    note: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)

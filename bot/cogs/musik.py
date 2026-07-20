@@ -8,9 +8,14 @@ Musiksystem.
 - /queue                             -- zeigt die aktuelle Warteschlange
 - /radio <genre>                     -- Live-Radiosender passend zum Genre (electro, techno,
                                          hiphop, pop, chill) oder direkt per Sendername (energy, kronehit)
+- /lautstaerke <prozent>             -- passt die Lautstärke an (1-250%, Standard 100%)
 
-Auto-Rejoin: wird der Bot aus dem gebundenen Sprachkanal entfernt (gekickt
-oder Verbindung verloren), tritt er automatisch wieder bei.
+Auto-Rejoin + Radio-Fortsetzung: wird der Bot aus dem gebundenen Sprachkanal
+entfernt (gekickt, Verbindung verloren oder per /stop weiter im Kanal), tritt
+er beim nächsten Beitritt automatisch wieder bei UND setzt den zuletzt
+gehörten Radiosender direkt fort -- ganz ohne erneutes /radio. Das gilt auch
+nach einem kompletten Bot-Neustart, da der zuletzt gehörte Sender pro Server
+in der Datenbank gespeichert wird (GuildSettings.music_last_genre).
 """
 import asyncio
 import logging
@@ -18,13 +23,15 @@ import logging
 import aiohttp
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.utils.permissions import require_level, PermissionLevel
 from bot.utils.embeds import success_embed, error_embed, base_embed
-from bot.utils.db_helpers import get_guild_language, get_or_create_guild_settings
+from bot.utils.db_helpers import (
+    get_guild_language, get_or_create_guild_settings, set_music_last_genre, get_music_last_genre,
+)
 from bot.utils.i18n import t
-from bot.utils.music_player import get_player, MusicPlayer, RADIO_STREAMS
+from bot.utils.music_player import get_player, MusicPlayer, RADIO_STREAMS, MIN_VOLUME, MAX_VOLUME
 from bot.database.db import get_session
 
 log = logging.getLogger("bot.cogs.musik")
@@ -34,10 +41,93 @@ class Musik(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def cog_load(self) -> None:
+        self._music_channel_poll_loop.start()
+
+    def cog_unload(self) -> None:
+        self._music_channel_poll_loop.cancel()
+
+    @tasks.loop(seconds=30)
+    async def _music_channel_poll_loop(self) -> None:
+        """WICHTIGER FIX: der gebundene Musik-Kanal wurde bisher NUR beim
+        Bot-Start (on_ready) übernommen. Änderte man ihn übers Dashboard,
+        während der Bot schon lief, passierte gar nichts -- der Bot blieb
+        im alten Kanal (oder trat gar keinem bei), bis zum nächsten Neustart.
+        Diese Schleife prüft alle 30s aktiv auf Änderungen und reagiert sofort:
+        neuer Kanal -> beitreten/wechseln, Kanal entfernt -> Bot verlässt ihn."""
+        from bot.database.models import GuildSettings
+        from sqlalchemy import select
+
+        try:
+            async with get_session() as session:
+                result = await session.execute(select(GuildSettings))
+                all_settings = result.scalars().all()
+        except Exception:
+            log.exception("Konnte GuildSettings für Musik-Kanal-Abgleich nicht laden")
+            return
+
+        for settings in all_settings:
+            guild = self.bot.get_guild(settings.guild_id)
+            if not guild:
+                continue
+
+            player = get_player(guild.id)
+            target_channel_id = settings.music_bound_voice_channel_id
+
+            if target_channel_id == player.bound_channel_id:
+                continue  # keine Änderung seit der letzten Prüfung
+
+            player.bound_channel_id = target_channel_id
+
+            if not target_channel_id:
+                # Kanal wurde übers Dashboard entfernt -> Bot verlässt ihn
+                if player.voice_client and player.voice_client.is_connected():
+                    await player.voice_client.disconnect()
+                    player.voice_client = None
+                    log.info("Musik-Kanal-Bindung entfernt (Guild %s) -- Bot hat den Kanal verlassen.", guild.id)
+                continue
+
+            channel = guild.get_channel(target_channel_id)
+            if not channel or not isinstance(channel, discord.VoiceChannel):
+                continue
+
+            try:
+                if player.voice_client and player.voice_client.is_connected():
+                    if player.voice_client.channel.id == target_channel_id:
+                        continue  # bereits im richtigen Kanal
+                    await player.voice_client.move_to(channel)
+                    log.info("Musik-Kanal übers Dashboard gewechselt (Guild %s) -> %s", guild.id, channel.id)
+                else:
+                    player.voice_client = await channel.connect()
+                    log.info("Musik-Kanal übers Dashboard neu gesetzt (Guild %s) -> %s", guild.id, channel.id)
+                    await self._resume_last_radio_if_idle(guild.id, player)
+            except Exception:
+                log.exception("Konnte auf Dashboard-Musik-Kanal-Änderung nicht reagieren (Guild %s)", guild.id)
+
     async def _after_track(self, player: MusicPlayer, _track) -> None:
         """Wird nach jedem Track aufgerufen -- spielt automatisch den nächsten
         (oder holt bei aktivem Radio-Modus neue Musik nach)."""
         await player.play_next(lambda t: self._after_track(player, t))
+
+    async def _resume_last_radio_if_idle(self, guild_id: int, player: MusicPlayer) -> None:
+        """Setzt beim (Wieder-)Beitritt zum gebundenen Musikkanal automatisch den
+        zuletzt gehörten Radiosender fort, sofern gerade nichts läuft und nichts
+        in der Warteschlange wartet -- damit /radio nach einem Kick, /stop oder
+        einem Bot-Neustart nicht erneut manuell aufgerufen werden muss."""
+        if player.queue:
+            return  # eine manuelle /play-Warteschlange hat Vorrang
+        if player.voice_client and (player.voice_client.is_playing() or player.voice_client.is_paused()):
+            return  # es läuft bereits etwas (z.B. Radio lief schon durch)
+
+        genre = player.last_radio_genre
+        if not genre:
+            genre = await get_music_last_genre(guild_id)  # z.B. nach Bot-Neustart aus der DB
+        if not genre or genre not in RADIO_STREAMS:
+            return
+
+        started = await player.play_radio_stream(genre)
+        if started:
+            log.info("Radiosender '%s' nach (Wieder-)Beitritt automatisch fortgesetzt (Guild %s).", genre, guild_id)
 
     # ---------- Kanal-Bindung ----------
     @commands.hybrid_group(name="musikkanal", description="Sprachkanal für die Musik-Bindung verwalten.")
@@ -76,6 +166,7 @@ class Musik(commands.Cog):
             except discord.ClientException as e:
                 await ctx.send(embed=error_embed(f"Verbindungsfehler: {e}" if lang == "de" else f"Connection error: {e}"))
                 return
+            await self._resume_last_radio_if_idle(ctx.guild.id, player)
 
         await ctx.send(embed=success_embed(
             "Musik-Kanal gesetzt" if lang == "de" else "Music channel set",
@@ -166,6 +257,26 @@ class Musik(commands.Cog):
         player.stop_and_clear()
         await ctx.send(embed=success_embed("Gestoppt" if lang == "de" else "Stopped"))
 
+    @commands.hybrid_command(name="lautstaerke", description="Passt die Wiedergabelautstärke an (1-250%).")
+    @app_commands.describe(prozent="Lautstärke in Prozent, z.B. 100 für normale Lautstärke")
+    @commands.guild_only()
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def lautstaerke(self, ctx: commands.Context, prozent: int):
+        lang = await get_guild_language(ctx.guild.id)
+        min_pct, max_pct = int(MIN_VOLUME * 100), int(MAX_VOLUME * 100)
+        if prozent < min_pct or prozent > max_pct:
+            await ctx.send(embed=error_embed(
+                f"Die Lautstärke muss zwischen {min_pct}% und {max_pct}% liegen." if lang == "de"
+                else f"Volume must be between {min_pct}% and {max_pct}%."))
+            return
+
+        player = get_player(ctx.guild.id)
+        applied = player.set_volume(prozent / 100)
+        await ctx.send(embed=success_embed(
+            "🔊 Lautstärke geändert" if lang == "de" else "🔊 Volume changed",
+            f"Jetzt bei **{round(applied * 100)}%**.",
+        ))
+
     @commands.hybrid_command(name="queue", description="Zeigt die aktuelle Warteschlange.")
     @commands.guild_only()
     async def queue_cmd(self, ctx: commands.Context):
@@ -214,6 +325,11 @@ class Musik(commands.Cog):
                 "Für dieses Genre ist gerade kein Sender hinterlegt." if lang == "de"
                 else "No station is configured for that genre right now."))
             return
+
+        # Sofort persistieren (nicht erst nach der 25s-Stabilitätsprüfung unten):
+        # so weiß der Bot auch dann, welcher Sender zuletzt gewünscht war, wenn
+        # er zwischen jetzt und dem Ende der Prüfung neu startet oder gekickt wird.
+        await set_music_last_genre(ctx.guild.id, genre)
 
         # Kurz warten und prüfen, ob der Sender tatsächlich stabil läuft, statt
         # sofort "Erfolg" zu melden. Bei 3 Versuchen à 8 Sekunden (siehe
@@ -338,8 +454,12 @@ class Musik(commands.Cog):
             channel = before.channel
             player.voice_client = await channel.connect()
             log.info("Auto-Rejoin in Guild %s, Kanal %s", guild_id, channel.id)
-            if player.radio_genre and not player.voice_client.is_playing():
+            if player.queue and not player.voice_client.is_playing():
                 await player.play_next(lambda t: self._after_track(player, t))
+            else:
+                # Kein wartender Track -- den zuletzt gehörten Radiosender fortsetzen
+                # (funktioniert auch, wenn zwischendurch /stop aufgerufen wurde).
+                await self._resume_last_radio_if_idle(guild_id, player)
         except Exception:
             log.exception("Auto-Rejoin fehlgeschlagen in Guild %s", guild_id)
 
@@ -374,6 +494,7 @@ class Musik(commands.Cog):
             try:
                 player.voice_client = await channel.connect()
                 log.info("Beim Start Musik-Kanal beigetreten: Guild %s, Kanal %s", guild.id, channel.id)
+                await self._resume_last_radio_if_idle(guild.id, player)
             except Exception:
                 log.exception("Konnte Musik-Kanal beim Start nicht beitreten (Guild %s)", guild.id)
 

@@ -148,10 +148,18 @@ class Giveaway(commands.Cog):
             return
 
         entries = await get_giveaway_entries(giveaway_id)
-        winner_id = random.choice(entries).user_id if entries else 0
+        guild = self.bot.get_guild(giveaway.guild_id)
+
+        # Bevorzugt jemanden auslosen, der den Server nicht inzwischen verlassen
+        # hat (Bug-Fix: vorher konnte ein längst ausgetretenes Mitglied gewinnen,
+        # dessen Erwähnung dann ins Leere zeigte). Sind ALLE Teilnehmer weg
+        # (z.B. sehr alter Giveaway), wird trotzdem ausgelost statt "niemand" zu
+        # melden -- das bleibt die bewusste Ausnahme.
+        eligible = [e for e in entries if guild and guild.get_member(e.user_id)] if guild else list(entries)
+        pool = eligible or entries
+        winner_id = random.choice(pool).user_id if pool else 0
         await end_giveaway(giveaway_id, winner_id)
 
-        guild = self.bot.get_guild(giveaway.guild_id)
         if not guild:
             return
         channel = guild.get_channel(giveaway.channel_id)

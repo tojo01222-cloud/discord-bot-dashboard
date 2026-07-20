@@ -6,11 +6,11 @@
 <div class="admin-card">
     <p><strong>Aktueller Status:</strong> {{ "Wartungsmodus aktiv" if state.maintenance_mode else "Normal aktiv" }}</p>
     {% if state.maintenance_mode and state.maintenance_reason %}
-    <p style="color:#a3a3a3;">Grund: {{ state.maintenance_reason }}</p>
+    <p style="color:#9297ab;">Grund: {{ state.maintenance_reason }}</p>
     {% endif %}
 </div>
 
-<p style="color:#a3a3a3; font-size:13px; max-width:500px;">
+<p style="color:#9297ab; font-size:13px; max-width:500px;">
     Hinweis: Ein echtes Ein-/Ausschalten des Bot-Prozesses ist ohne Zugriff auf die
     Hoster-Infrastruktur nicht möglich. Der Wartungsmodus lässt den Bot online, aber er
     reagiert auf keine Befehle mehr (außer dem Bot-Owner). Änderungen brauchen bis zu

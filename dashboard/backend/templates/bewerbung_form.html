@@ -5,7 +5,7 @@
     <h1>{{ config.welcome_text }}</h1>
 
     {% if closed %}
-    <p style="color:#a3a3a3;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
+    <p style="color:#9297ab;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
     {% elif already_applied %}
     <div class="flash flash-success">Du hast bereits eine offene Bewerbung eingereicht — wir melden uns bei dir!</div>
     {% else %}
@@ -14,14 +14,14 @@
         {% endfor %}
 
         {% if not questions %}
-        <p style="color:#a3a3a3;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
+        <p style="color:#9297ab;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
         {% else %}
         <form method="post" action="/bewerbung/{{ guild_id }}" class="settings-form" style="text-align:left;">
             {% for q in questions %}
             <div class="field">
                 <label for="question_{{ q.id }}">{{ q.question_text }}</label>
                 <textarea id="question_{{ q.id }}" name="question_{{ q.id }}" required rows="3"
-                          style="background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
+                          style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
             </div>
             {% endfor %}
             <button type="submit" class="btn">Bewerbung abschicken</button>

@@ -2,40 +2,49 @@
 {% block title %}Bot Dashboard{% endblock %}
 {% block content %}
 <div class="hero">
-    <h1>Dein Discord-Bot, komplett unter Kontrolle</h1>
-    <p>Moderation, Team-Verwaltung, Musik, Tickets, Bewerbungen und mehr — alles an einem Ort,
-       für jeden Server, auf dem du Admin bist.</p>
+    <h1>{{ wt(site_lang, 'landing_title') }}</h1>
+    <p>{{ wt(site_lang, 'landing_subtitle') }}</p>
     <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
-        <a href="/login" class="btn btn-discord">Zum Server-Dashboard</a>
-        <a href="/admin/login" class="btn btn-ghost">Zum Admin-Bereich</a>
+        <a href="/login" class="btn btn-discord">🎮 {{ wt(site_lang, 'landing_btn_dashboard') }}</a>
+        <a href="/admin/login" class="btn btn-ghost">🛡️ {{ wt(site_lang, 'landing_btn_admin') }}</a>
     </div>
 </div>
 
 <div class="feature-grid">
     <div class="feature-card">
-        <div class="icon"></div>
-        <h3>Moderation & Sicherheit</h3>
-        <p>Anti-Nuke, Anti-Spam, Team-Ränge und ein vollständiges Strafverzeichnis — direkt einstellbar.</p>
+        <div class="icon">🛡️</div>
+        <h3>{{ wt(site_lang, 'feature1_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature1_desc') }}</p>
     </div>
     <div class="feature-card">
-        <div class="icon"></div>
-        <h3>Musik & Radio</h3>
-        <p>YouTube-Wiedergabe und echte Live-Radiosender, dauerhaft in deinem Sprachkanal.</p>
+        <div class="icon">🎵</div>
+        <h3>{{ wt(site_lang, 'feature2_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature2_desc') }}</p>
     </div>
     <div class="feature-card">
-        <div class="icon"></div>
-        <h3>Tickets & Warteraum</h3>
-        <p>Professionelle Support-Panels mit mehreren Designs und automatischer Hilfe-Erkennung.</p>
+        <div class="icon">🎫</div>
+        <h3>{{ wt(site_lang, 'feature3_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature3_desc') }}</p>
     </div>
     <div class="feature-card">
-        <div class="icon"></div>
-        <h3>Bewerbungssystem</h3>
-        <p>Eigene Bewerbungsformulare für dein Team — Bewerber:innen füllen sie direkt hier aus.</p>
+        <div class="icon">📝</div>
+        <h3>{{ wt(site_lang, 'feature4_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature4_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">📈</div>
+        <h3>{{ wt(site_lang, 'feature5_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature5_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🌐</div>
+        <h3>{{ wt(site_lang, 'feature6_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature6_desc') }}</p>
     </div>
 </div>
 
 <p class="small-print" style="text-align:center; margin-top:48px;">
-    <a href="/impressum" style="color:#a3a3a3;">Impressum</a> ·
-    <a href="/datenschutz" style="color:#a3a3a3;">Datenschutz</a>
+    <a href="/impressum">Impressum</a> ·
+    <a href="/datenschutz">Datenschutz</a>
 </p>
 {% endblock %}

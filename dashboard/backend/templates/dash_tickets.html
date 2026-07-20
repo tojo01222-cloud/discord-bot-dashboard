@@ -5,9 +5,9 @@
 <h1>Tickets — {{ guild.name }}</h1>
 
 {% if not tickets %}
-<p style="color:#a3a3a3;">Noch keine Tickets vorhanden.</p>
+<p style="color:#9297ab;">Noch keine Tickets vorhanden.</p>
 {% else %}
-<div class="admin-card" style="background:#0d0d0d; border:1px solid #2a2a2a; border-radius:10px; padding:0;">
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:10px; padding:0;">
     <table class="admin-table">
         <tr><th>Status</th><th>Ersteller</th><th>Design</th><th>Erstellt am</th></tr>
         {% for t in tickets %}

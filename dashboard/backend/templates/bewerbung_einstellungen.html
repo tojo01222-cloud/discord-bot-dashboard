@@ -36,10 +36,10 @@
 
 <h2 style="margin-top:40px; font-size:18px;">Fragen</h2>
 {% for q in questions %}
-<div style="padding:12px 0; border-bottom:1px solid #2a2a2a;">
+<div style="padding:12px 0; border-bottom:1px solid #262838;">
     <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/bearbeiten" style="display:flex; gap:8px; align-items:center;">
         <input type="text" name="question_text" value="{{ q.question_text }}"
-               style="flex:1; background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:8px 12px;border-radius:6px;">
+               style="flex:1; background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:8px 12px;border-radius:6px;">
         <button type="submit" class="btn btn-small">Speichern</button>
     </form>
     <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/loeschen" style="margin-top:6px;">
@@ -47,7 +47,7 @@
     </form>
 </div>
 {% else %}
-<p style="color:#a3a3a3;">Noch keine Fragen eingerichtet.</p>
+<p style="color:#9297ab;">Noch keine Fragen eingerichtet.</p>
 {% endfor %}
 
 <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen" class="settings-form" style="margin-top:20px;">

@@ -3,13 +3,13 @@
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
 <h1>Anti-Nuke-Whitelist — {{ guild.name }}</h1>
-<p style="color:#a3a3a3; font-size:13px;">User auf dieser Liste lösen die Anti-Nuke-Erkennung nie aus (der Server-Owner ist immer automatisch ausgenommen).</p>
+<p style="color:#9297ab; font-size:13px;">User auf dieser Liste lösen die Anti-Nuke-Erkennung nie aus (der Server-Owner ist immer automatisch ausgenommen).</p>
 
 {% if not trusted %}
-<p style="color:#a3a3a3;">Die Liste ist aktuell leer.</p>
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
 {% else %}
 {% for t in trusted %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #2a2a2a;">
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
     <span>Discord-ID {{ t.user_id }}</span>
     <form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste/{{ t.user_id }}/entfernen">
         <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>

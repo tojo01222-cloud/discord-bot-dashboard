@@ -222,18 +222,24 @@ class Fun(commands.Cog):
     @commands.hybrid_command(name="slap", description="Klatscht spielerisch einen anderen User.")
     @app_commands.describe(member="Wen du 'schlagen' willst")
     async def slap(self, ctx: commands.Context, member: discord.Member):
-        await ctx.send(f"👋 {ctx.author.mention} klatscht {member.mention} spielerisch!")
+        embed = base_embed("👋 Klatsch!", f"{ctx.author.mention} klatscht {member.mention} spielerisch!")
+        embed.set_thumbnail(url=member.display_avatar.url)
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="hug", description="Umarmt einen anderen User.")
     @app_commands.describe(member="Wen du umarmen willst")
     async def hug(self, ctx: commands.Context, member: discord.Member):
-        await ctx.send(f"🤗 {ctx.author.mention} umarmt {member.mention}!")
+        embed = base_embed("🤗 Umarmung!", f"{ctx.author.mention} umarmt {member.mention}!")
+        embed.set_thumbnail(url=member.display_avatar.url)
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="kompliment", description="Macht jemandem ein zufälliges Kompliment.")
     @app_commands.describe(member="Optional: wem das Kompliment gilt")
     async def kompliment(self, ctx: commands.Context, member: discord.Member = None):
         target = member or ctx.author
-        await ctx.send(f"✨ {target.mention} {random.choice(COMPLIMENTS_DE)}")
+        embed = base_embed("✨ Kompliment", f"{target.mention} {random.choice(COMPLIMENTS_DE)}")
+        embed.set_thumbnail(url=target.display_avatar.url)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

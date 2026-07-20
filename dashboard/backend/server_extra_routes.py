@@ -14,6 +14,8 @@ from fastapi.templating import Jinja2Templates
 
 from bot.utils.db_helpers import (
     get_team_ranks,
+    add_team_rank,
+    remove_team_rank,
     get_all_team_members,
     get_level_role_rewards,
     add_level_role_reward,
@@ -27,10 +29,14 @@ from bot.utils.db_helpers import (
     log_punishment,
     get_or_create_guild_settings,
     get_tickets_for_guild,
+    add_anti_exemption,
+    remove_anti_exemption,
+    get_anti_exemptions,
 )
 from bot.database.db import get_session
 from dashboard.backend.bot_api import (
     fetch_guild_roles, fetch_guild_text_channels, kick_member, ban_member, send_channel_message,
+    fetch_guild_members, add_role_to_member, set_channel_slowmode, set_channel_lock, set_member_nickname,
 )
 from dashboard.backend.template_context import global_template_context
 
@@ -57,11 +63,31 @@ async def team_page(request: Request, guild_id: int):
     ranks = await get_team_ranks(guild_id)
     members = await get_all_team_members(guild_id)
     ranks_by_id = {r.id: r for r in ranks}
+    roles = await fetch_guild_roles(guild_id)
     return templates.TemplateResponse(request, "dash_team.html", {
         "user": _current_user(request), "messages": [],
         "guild": {"id": guild_id, "name": guild["name"]},
-        "ranks": ranks, "members": members, "ranks_by_id": ranks_by_id,
+        "ranks": ranks, "members": members, "ranks_by_id": ranks_by_id, "roles": roles,
     })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/team/raenge")
+async def team_rank_add(request: Request, guild_id: int, role_id: int = Form(...)):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    if role_id:
+        await add_team_rank(guild_id, role_id)
+    return RedirectResponse(f"/dashboard/{guild_id}/team", status_code=303)
+
+
+@server_extra_router.post("/dashboard/{guild_id}/team/raenge/{rank_id}/loeschen")
+async def team_rank_remove(request: Request, guild_id: int, rank_id: int):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await remove_team_rank(rank_id)
+    return RedirectResponse(f"/dashboard/{guild_id}/team", status_code=303)
 
 
 @server_extra_router.get("/dashboard/{guild_id}/levelrollen", response_class=HTMLResponse)
@@ -173,10 +199,22 @@ async def moderation_page(request: Request, guild_id: int):
     denied, guild = await _require_guild_admin(request, guild_id)
     if denied:
         return denied
+    channels = await fetch_guild_text_channels(guild_id)
+    roles = await fetch_guild_roles(guild_id)
     return templates.TemplateResponse(request, "dash_moderation.html", {
         "user": _current_user(request), "messages": [],
         "guild": {"id": guild_id, "name": guild["name"]},
+        "channels": channels, "roles": roles,
     })
+
+
+async def _moderation_context(guild_id: int) -> dict:
+    """Kanäle + Rollen fürs Moderation-Formular -- an einer Stelle, damit
+    nicht jede der 8 moderation_*-Routen das einzeln wiederholen muss."""
+    return {
+        "channels": await fetch_guild_text_channels(guild_id),
+        "roles": await fetch_guild_roles(guild_id),
+    }
 
 
 @server_extra_router.post("/dashboard/{guild_id}/moderation/kick")
@@ -192,6 +230,7 @@ async def moderation_kick(request: Request, guild_id: int, user_id: int = Form(.
     return templates.TemplateResponse(request, "dash_moderation.html", {
         "user": _current_user(request),
         "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
         "messages": [{"type": "success" if ok else "error",
                       "text": "User gekickt." if ok else "Kick fehlgeschlagen (Berechtigung des Bots prüfen)."}],
     })
@@ -207,6 +246,7 @@ async def moderation_ban(request: Request, guild_id: int, user_id: int = Form(..
     return templates.TemplateResponse(request, "dash_moderation.html", {
         "user": _current_user(request),
         "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
         "messages": [{"type": "success" if ok else "error",
                       "text": "User gebannt." if ok else "Bann fehlgeschlagen (Berechtigung des Bots prüfen)."}],
     })
@@ -223,7 +263,105 @@ async def moderation_warn(request: Request, guild_id: int, user_id: int = Form(.
     return templates.TemplateResponse(request, "dash_moderation.html", {
         "user": user,
         "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
         "messages": [{"type": "success", "text": "Verwarnung gespeichert."}],
+    })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/moderation/autorole-all")
+async def moderation_autorole_all(request: Request, guild_id: int, role_id: int = Form(...)):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+
+    members = await fetch_guild_members(guild_id)
+    given, already_had, failed = 0, 0, 0
+    for member in members:
+        if member.get("user", {}).get("bot"):
+            continue
+        if str(role_id) in member.get("roles", []):
+            already_had += 1
+            continue
+        ok = await add_role_to_member(guild_id, int(member["user"]["id"]), role_id, "Dashboard: Autorole an alle")
+        if ok:
+            given += 1
+        else:
+            failed += 1
+
+    text = f"{given} Mitgliedern die Rolle gegeben. {already_had} hatten sie schon."
+    if failed:
+        text += f" {failed} fehlgeschlagen."
+    return templates.TemplateResponse(request, "dash_moderation.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
+        "messages": [{"type": "success", "text": text}],
+    })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/moderation/slowmode")
+async def moderation_slowmode(request: Request, guild_id: int, channel_id: int = Form(...),
+                               seconds: int = Form(...)):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    if seconds < 0 or seconds > 21600:
+        text, msg_type = "Wert muss zwischen 0 und 21600 liegen.", "error"
+    else:
+        ok = await set_channel_slowmode(channel_id, seconds)
+        text = "Slowmode gesetzt." if ok else "Fehlgeschlagen (Berechtigung des Bots prüfen)."
+        msg_type = "success" if ok else "error"
+    return templates.TemplateResponse(request, "dash_moderation.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
+        "messages": [{"type": msg_type, "text": text}],
+    })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/moderation/lock")
+async def moderation_lock(request: Request, guild_id: int, channel_id: int = Form(...)):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    ok = await set_channel_lock(guild_id, channel_id, locked=True)
+    return templates.TemplateResponse(request, "dash_moderation.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
+        "messages": [{"type": "success" if ok else "error",
+                      "text": "Kanal gesperrt." if ok else "Fehlgeschlagen (Berechtigung des Bots prüfen)."}],
+    })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/moderation/unlock")
+async def moderation_unlock(request: Request, guild_id: int, channel_id: int = Form(...)):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    ok = await set_channel_lock(guild_id, channel_id, locked=False)
+    return templates.TemplateResponse(request, "dash_moderation.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
+        "messages": [{"type": "success" if ok else "error",
+                      "text": "Kanal entsperrt." if ok else "Fehlgeschlagen (Berechtigung des Bots prüfen)."}],
+    })
+
+
+@server_extra_router.post("/dashboard/{guild_id}/moderation/nickname")
+async def moderation_nickname(request: Request, guild_id: int, user_id: int = Form(...),
+                               nickname: str = Form("")):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    ok = await set_member_nickname(guild_id, user_id, nickname)
+    return templates.TemplateResponse(request, "dash_moderation.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        **(await _moderation_context(guild_id)),
+        "messages": [{"type": "success" if ok else "error",
+                      "text": "Spitzname geändert." if ok else "Fehlgeschlagen (Berechtigung des Bots prüfen)."}],
     })
 
 
@@ -267,3 +405,70 @@ async def tickets_page(request: Request, guild_id: int):
         "guild": {"id": guild_id, "name": guild["name"]},
         "tickets": tickets,
     })
+
+
+async def _exemptions_page(request: Request, guild_id: int, feature: str, template: str, label: str):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    entries = await get_anti_exemptions(guild_id, feature)
+    return templates.TemplateResponse(request, template, {
+        "user": _current_user(request), "messages": [],
+        "guild": {"id": guild_id, "name": guild["name"]},
+        "entries": entries, "feature_label": label,
+    })
+
+
+async def _exemptions_add(request: Request, guild_id: int, feature: str, target_type: str,
+                           target_id: int, redirect_path: str):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    user = _current_user(request)
+    await add_anti_exemption(guild_id, feature, target_type, target_id, int(user["discord_id"]))
+    return RedirectResponse(redirect_path, status_code=303)
+
+
+async def _exemptions_remove(request: Request, guild_id: int, feature: str, target_type: str,
+                              target_id: int, redirect_path: str):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await remove_anti_exemption(guild_id, feature, target_type, target_id)
+    return RedirectResponse(redirect_path, status_code=303)
+
+
+@server_extra_router.get("/dashboard/{guild_id}/antihack-ausnahmen", response_class=HTMLResponse)
+async def antihack_exemptions_page(request: Request, guild_id: int):
+    return await _exemptions_page(request, guild_id, "antihack", "dash_exemptions.html", "Anti-Hack")
+
+
+@server_extra_router.post("/dashboard/{guild_id}/antihack-ausnahmen")
+async def antihack_exemptions_add(request: Request, guild_id: int, target_type: str = Form(...),
+                                   target_id: int = Form(...)):
+    return await _exemptions_add(request, guild_id, "antihack", target_type, target_id,
+                                  f"/dashboard/{guild_id}/antihack-ausnahmen")
+
+
+@server_extra_router.post("/dashboard/{guild_id}/antihack-ausnahmen/{target_type}/{target_id}/entfernen")
+async def antihack_exemptions_remove(request: Request, guild_id: int, target_type: str, target_id: int):
+    return await _exemptions_remove(request, guild_id, "antihack", target_type, target_id,
+                                     f"/dashboard/{guild_id}/antihack-ausnahmen")
+
+
+@server_extra_router.get("/dashboard/{guild_id}/antiwerbung-ausnahmen", response_class=HTMLResponse)
+async def antiwerbung_exemptions_page(request: Request, guild_id: int):
+    return await _exemptions_page(request, guild_id, "antiwerbung", "dash_exemptions.html", "Anti-Werbung")
+
+
+@server_extra_router.post("/dashboard/{guild_id}/antiwerbung-ausnahmen")
+async def antiwerbung_exemptions_add(request: Request, guild_id: int, target_type: str = Form(...),
+                                      target_id: int = Form(...)):
+    return await _exemptions_add(request, guild_id, "antiwerbung", target_type, target_id,
+                                  f"/dashboard/{guild_id}/antiwerbung-ausnahmen")
+
+
+@server_extra_router.post("/dashboard/{guild_id}/antiwerbung-ausnahmen/{target_type}/{target_id}/entfernen")
+async def antiwerbung_exemptions_remove(request: Request, guild_id: int, target_type: str, target_id: int):
+    return await _exemptions_remove(request, guild_id, "antiwerbung", target_type, target_id,
+                                     f"/dashboard/{guild_id}/antiwerbung-ausnahmen")

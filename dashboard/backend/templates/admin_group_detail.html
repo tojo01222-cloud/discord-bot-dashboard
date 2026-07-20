@@ -8,7 +8,7 @@
     <h2 style="font-size:16px; margin-bottom:12px;">Rechte dieser Gruppe</h2>
     <form method="post" action="/admin/groups/{{ group.id }}/permissions" class="admin-form">
         {% for perm in all_permissions %}
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#ffffff;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#f5f6fa;">
             <input type="checkbox" name="perm_{{ perm }}" value="on" {% if perm in permissions %}checked{% endif %}>
             {{ perm }}
         </label>
@@ -20,14 +20,14 @@
 <div class="admin-card">
     <h2 style="font-size:16px; margin-bottom:12px;">Mitglieder ({{ members|length }})</h2>
     {% for m in members %}
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #2a2a2a;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #262838;">
         <span>{{ m.username }}</span>
         <form method="post" action="/admin/groups/{{ group.id }}/members/{{ m.id }}/remove">
             <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
         </form>
     </div>
     {% else %}
-    <p style="color:#a3a3a3;">Noch keine Mitglieder.</p>
+    <p style="color:#9297ab;">Noch keine Mitglieder.</p>
     {% endfor %}
 
     {% if non_members %}

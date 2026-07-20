@@ -1,7 +1,9 @@
 """
 Invite-Tracking.
 
-- /invites [user]   -- zeigt, wie viele echte Einladungen ein User hat
+- /invites [user]        -- zeigt, wie viele echte Einladungen ein User hat
+- /inviteleaderboard      -- Top 10 Einlader des Servers
+- /invitestats [user]     -- detaillierte Statistik (echt/fake/gesamt) eines Users
 
 Funktionsweise: Discord liefert keinen direkten "dieser Link wurde benutzt"-
 Event beim Member-Beitritt. Stattdessen wird bei jedem Beitritt die aktuelle
@@ -19,7 +21,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.embeds import base_embed
+from bot.utils.embeds import base_embed, error_embed
 from bot.utils.db_helpers import (
     get_guild_language,
     get_invite_records,
@@ -27,6 +29,8 @@ from bot.utils.db_helpers import (
     remove_invite_record,
     record_invite_join,
     get_invite_count,
+    get_invite_leaderboard,
+    get_invite_stats,
 )
 
 log = logging.getLogger("bot.cogs.invites")
@@ -108,6 +112,47 @@ class Invites(commands.Cog):
                             else f"📨 Invites by {target.display_name}")
         embed.description = (f"**{count}** echte Einladungen" if lang == "de"
                               else f"**{count}** real invites")
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="inviteleaderboard", description="Zeigt die Top 10 Einlader des Servers.")
+    @commands.guild_only()
+    async def inviteleaderboard(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        top = await get_invite_leaderboard(ctx.guild.id, limit=10)
+        if not top:
+            await ctx.send(embed=error_embed("Noch keine Einladungen erfasst." if lang == "de"
+                                              else "No invites tracked yet."))
+            return
+
+        embed = base_embed("📨 Invite-Leaderboard" if lang == "de" else "📨 Invite leaderboard")
+        medals = ["🥇", "🥈", "🥉"]
+        lines = []
+        for i, (inviter_id, count) in enumerate(top):
+            prefix = medals[i] if i < 3 else f"{i+1}."
+            plural = "Einladung" if count == 1 else "Einladungen" if lang == "de" else ("invite" if count == 1 else "invites")
+            lines.append(f"{prefix} <@{inviter_id}> — **{count}** {plural}")
+        embed.description = "\n".join(lines)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name="invitestats", description="Zeigt eine detaillierte Invite-Statistik (echt/fake/gesamt).")
+    @app_commands.describe(member="Optional: ein anderer User")
+    @commands.guild_only()
+    async def invitestats(self, ctx: commands.Context, member: discord.Member = None):
+        target = member or ctx.author
+        lang = await get_guild_language(ctx.guild.id)
+        stats = await get_invite_stats(ctx.guild.id, target.id)
+
+        embed = base_embed(f"📊 Invite-Statistik von {target.display_name}" if lang == "de"
+                            else f"📊 Invite stats for {target.display_name}")
+        embed.add_field(name="Echt" if lang == "de" else "Real", value=str(stats["real"]), inline=True)
+        embed.add_field(name="Fake", value=str(stats["fake"]), inline=True)
+        embed.add_field(name="Gesamt" if lang == "de" else "Total", value=str(stats["total"]), inline=True)
+        if stats["fake"] > 0:
+            embed.set_footer(text=(
+                "Fake = Account war bei Beitritt jünger als 7 Tage (Heuristik, keine Garantie)."
+                if lang == "de" else
+                "Fake = account was younger than 7 days at join (heuristic, not a guarantee)."
+            ))
         await ctx.send(embed=embed)
 
 

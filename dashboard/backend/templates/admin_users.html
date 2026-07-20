@@ -2,14 +2,14 @@
 {% block title %}Dashboard-User — Admin-Panel{% endblock %}
 {% block content %}
 <h1>Dashboard-User ({{ dashboard_users|length }})</h1>
-<p style="color:#a3a3a3; font-size:13px;">
+<p style="color:#9297ab; font-size:13px;">
     Login läuft ausschließlich über Discord (OAuth) — es gibt bei uns keine Passwörter
     oder E-Mail-Adressen zu diesen Usern, weil wir sowas nicht erheben.
 </p>
 
 <form method="get" action="/admin/users" style="margin-bottom:20px;">
     <input type="text" name="q" placeholder="Nach Discord-Namen suchen..." value="{{ q|default('') }}"
-           style="background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:10px 14px;border-radius:10px;min-width:260px;">
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;min-width:260px;">
     <button type="submit" class="btn btn-small">Suchen</button>
 </form>
 

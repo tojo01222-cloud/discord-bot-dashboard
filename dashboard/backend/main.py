@@ -26,6 +26,7 @@ from bot.utils.db_helpers import (
     get_bot_guild_ids,
     save_guild_settings_from_dashboard,
     get_or_create_guild_settings,
+    get_news_posts,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -69,6 +70,29 @@ async def index(request: Request):
     if _current_user(request):
         return RedirectResponse("/servers")
     return templates.TemplateResponse(request, "landing.html", {"user": None, "messages": []})
+
+
+@app.get("/set-site-language")
+async def set_site_language(request: Request, lang: str = "en", next: str = "/"):
+    if lang not in ("en", "de"):
+        lang = "en"
+    request.session["site_lang"] = lang
+    return RedirectResponse(next)
+
+
+@app.get("/news", response_class=HTMLResponse)
+async def news_page(request: Request):
+    posts = await get_news_posts(published_only=True)
+    return templates.TemplateResponse(request, "news.html", {
+        "user": _current_user(request), "messages": [], "posts": posts,
+    })
+
+
+@app.get("/apply", response_class=HTMLResponse)
+async def apply_page(request: Request):
+    return templates.TemplateResponse(request, "apply.html", {
+        "user": _current_user(request), "messages": [],
+    })
 
 
 @app.get("/datenschutz", response_class=HTMLResponse)
@@ -150,6 +174,11 @@ async def servers(request: Request):
             "bot_present": int(g["id"]) in bot_guild_ids,
         })
 
+    # Server, auf denen der Bot schon aktiv ist, ganz oben anzeigen -- die
+    # will man normalerweise zuerst sehen/verwalten, nicht erst die, wo man
+    # den Bot noch einladen müsste.
+    manageable.sort(key=lambda g: not g["bot_present"])
+
     invite_url = (
         f"https://discord.com/oauth2/authorize?client_id={cfg.DISCORD_CLIENT_ID}"
         f"&permissions=8&scope=bot%20applications.commands"
@@ -223,8 +252,12 @@ async def save_guild_settings(
     waiting_room_voice_channel_id: int = Form(0),
     waiting_room_notify_channel_id: int = Form(0),
     autorole_id: int = Form(0),
+    autorole_bot_id: int = Form(0),
+    autorole_admin_id: int = Form(0),
     anti_nuke_enabled: str = Form(""),
     anti_spam_enabled: str = Form(""),
+    anti_hack_enabled: str = Form(""),
+    anti_werbung_enabled: str = Form(""),
     music_bound_voice_channel_id: int = Form(0),
 ):
     denied, _guild = await _require_guild_access(request, guild_id)
@@ -236,5 +269,7 @@ async def save_guild_settings(
         ticket_category_id, waiting_room_voice_channel_id, waiting_room_notify_channel_id,
         autorole_id, anti_nuke_enabled == "on", anti_spam_enabled == "on",
         music_bound_voice_channel_id,
+        autorole_bot_id, autorole_admin_id,
+        anti_hack_enabled == "on", anti_werbung_enabled == "on",
     )
     return RedirectResponse(f"/dashboard/{guild_id}?saved=1", status_code=303)

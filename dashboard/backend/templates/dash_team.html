@@ -4,24 +4,39 @@
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
 <h1>Team — {{ guild.name }}</h1>
 
-<h2 style="font-size:16px; margin-top:24px;">Ränge (niedrig → hoch)</h2>
+<h2 style="margin-top:24px;">Ränge (niedrig → hoch)</h2>
 {% if not ranks %}
-<p style="color:#a3a3a3;">Noch keine Team-Ränge eingerichtet (siehe <code>/teamrank add</code> in Discord).</p>
+<p style="color:#9297ab;">Noch keine Team-Ränge eingerichtet.</p>
 {% else %}
-<ol>
-    {% for r in ranks %}
-    <li>Rollen-ID {{ r.role_id }} (Position {{ r.position }})</li>
-    {% endfor %}
-</ol>
+{% for r in ranks %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
+    <span>Position {{ r.position }} — Rollen-ID {{ r.role_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/team/raenge/{{ r.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% endfor %}
 {% endif %}
 
-<h2 style="font-size:16px; margin-top:24px;">Mitglieder ({{ members|length }})</h2>
+<form method="post" action="/dashboard/{{ guild.id }}/team/raenge" class="settings-form" style="margin-top:20px;">
+    <div class="field">
+        <label for="role_id">Neuer Rang (wird am Ende der Hierarchie eingefügt)</label>
+        <select name="role_id" id="role_id">
+            {% for role in roles %}
+            <option value="{{ role.id }}">{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-small">Rang hinzufügen</button>
+</form>
+
+<h2 style="margin-top:40px;">Mitglieder ({{ members|length }})</h2>
 {% if not members %}
-<p style="color:#a3a3a3;">Das Team ist aktuell leer.</p>
+<p style="color:#9297ab;">Das Team ist aktuell leer.</p>
 {% else %}
-<div class="admin-card" style="background:#0d0d0d; border:1px solid #2a2a2a; border-radius:14px; padding:20px;">
+<div class="admin-card">
     {% for m in members %}
-    <div style="padding:8px 0; border-bottom:1px solid #2a2a2a;">
+    <div style="padding:8px 0; border-bottom:1px solid #262838;">
         Discord-ID {{ m.user_id }} —
         {% if m.current_rank_id and m.current_rank_id in ranks_by_id %}
         Rang-Position {{ ranks_by_id[m.current_rank_id].position }}

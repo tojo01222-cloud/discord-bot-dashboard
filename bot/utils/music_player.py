@@ -50,11 +50,14 @@ FFMPEG_OPTS = {
     "options": "-vn",
 }
 
-# Lautstärke-Verstärkung (1.0 = normal, 2.0 = doppelt so laut). Bei sehr
-# lauten Passagen kann es dadurch zu leichten Verzerrungen kommen -- das ist
-# eine unvermeidbare Nebenwirkung von digitaler Verstärkung über den
-# ursprünglichen Pegel hinaus.
-VOLUME_MULTIPLIER = 2.0
+# Lautstärke-Verstärkung (1.0 = normal). War vorher fix auf 2.0 (doppelte
+# Lautstärke) gesetzt -- das führte bei lauten Passagen zu hörbaren
+# Verzerrungen/Clipping (Bug-Report). Jetzt 1.0 als sauberer Standard,
+# einstellbar pro Server über /lautstaerke (1-250%, siehe musik.py), gespeichert
+# auf MusicPlayer.volume statt einer festen globalen Konstante.
+DEFAULT_VOLUME = 1.0
+MIN_VOLUME = 0.01
+MAX_VOLUME = 2.5
 
 # Wie lange (Sekunden) ein neu gestarteter Stream Zeit hat, mindestens EIN
 # Byte Audiodaten zu liefern, bevor er als gescheitert gilt.
@@ -211,6 +214,14 @@ class MusicPlayer:
     queue: list[Track] = field(default_factory=list)
     radio_genre: str | None = None
     text_channel_id: int = 0  # wohin "Jetzt spielt"-Nachrichten gehen
+    volume: float = DEFAULT_VOLUME
+    # Zuletzt erfolgreich gestarteter Radiosender -- anders als radio_genre wird
+    # dieser Wert NICHT von stop_and_clear() zurückgesetzt, damit ein Auto-Rejoin
+    # nach /stop, einem Kick oder Neustart denselben Sender fortsetzen kann, ohne
+    # dass /radio erneut aufgerufen werden muss (siehe musik.py: on_voice_state_update,
+    # on_ready). Wird zusätzlich in GuildSettings.music_last_genre gespiegelt, damit es
+    # auch einen kompletten Bot-Neustart übersteht.
+    last_radio_genre: str | None = None
     _active_stream_url: str | None = field(default=None, repr=False)
     _ad_watch_task: asyncio.Task | None = field(default=None, repr=False)
     _play_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -261,7 +272,7 @@ class MusicPlayer:
             return
 
         monitored = _MonitoredSource(track.stream_url, **FFMPEG_OPTS)
-        source = discord.PCMVolumeTransformer(monitored, volume=VOLUME_MULTIPLIER)
+        source = discord.PCMVolumeTransformer(monitored, volume=self.volume)
 
         loop = asyncio.get_running_loop()
 
@@ -281,6 +292,7 @@ class MusicPlayer:
 
         self.queue.clear()  # Radio-Modus ersetzt eine eventuell laufende Warteschlange
         self.radio_genre = genre
+        self.last_radio_genre = genre
         self._consecutive_failures = 0
         self.last_stream_error = None
         self._is_fallback = False
@@ -304,7 +316,7 @@ class MusicPlayer:
                 self.voice_client.stop()
 
             monitored = _MonitoredSource(stream_url, **FFMPEG_OPTS)
-            source = discord.PCMVolumeTransformer(monitored, volume=VOLUME_MULTIPLIER)
+            source = discord.PCMVolumeTransformer(monitored, volume=self.volume)
             loop = asyncio.get_running_loop()
 
             def _after(error):
@@ -396,12 +408,25 @@ class MusicPlayer:
         return False
 
     def stop_and_clear(self) -> None:
+        # Bewusst wird last_radio_genre HIER NICHT zurückgesetzt (anders als
+        # radio_genre) -- so kann ein Auto-Rejoin nach einem Kick/Neustart
+        # weiterhin denselben Sender fortsetzen, den man zuletzt gehört hat,
+        # auch wenn man zwischendurch /stop benutzt hat.
         self.queue.clear()
         self.radio_genre = None
         self._is_fallback = False
         self._cancel_ad_watch()
         if self.voice_client:
             self.voice_client.stop()
+
+    def set_volume(self, volume: float) -> float:
+        """Setzt die Lautstärke (MIN_VOLUME..MAX_VOLUME) und wendet sie sofort
+        auf eine eventuell laufende Wiedergabe an."""
+        volume = max(MIN_VOLUME, min(MAX_VOLUME, volume))
+        self.volume = volume
+        if self.voice_client and isinstance(self.voice_client.source, discord.PCMVolumeTransformer):
+            self.voice_client.source.volume = volume
+        return volume
 
 
 _players: dict[int, MusicPlayer] = {}

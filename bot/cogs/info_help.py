@@ -2,6 +2,12 @@
 Info- und Hilfe-Befehle. Dient als REFERENZ-Cog für alle weiteren Module:
 Jeder Command wird als `hybrid_command` gebaut -> funktioniert automatisch
 sowohl als /befehl (Slash) als auch als !befehl (Prefix), ohne doppelten Code.
+
+/help überarbeitet: statt einer einzigen, bei über 100 Befehlen unübersichtlich
+gewordenen Liste aus reinen Befehlsnamen (ohne Beschreibung, dicht an das
+Discord-Embed-Zeichenlimit gequetscht) gibt es jetzt eine Übersicht mit
+Kategorien-Anzahl PLUS ein Auswahlmenü: pro Kategorie eine übersichtliche
+Liste mit Befehl UND Kurzbeschreibung.
 """
 import discord
 from discord.ext import commands
@@ -10,79 +16,132 @@ from bot.utils.embeds import base_embed
 from bot.utils.i18n import t
 from bot.utils.db_helpers import get_guild_language
 
-# Anzeigename + Emoji pro Cog-Klasse, fürs /help-Kommando. Ein neuer Cog ohne
-# Eintrag hier taucht trotzdem auf (mit Klassennamen als Fallback) -- diese
-# Liste ist nur für schönere Beschriftung, kein Muss zum Funktionieren.
+# Cog-Klassenname -> (Emoji, Anzeigename, Kategorie). Cogs ohne Eintrag hier
+# landen automatisch in einer "Sonstiges"-Kategorie -- diese Liste ist nur für
+# schönere Beschriftung/Gruppierung, kein Muss zum Funktionieren.
 COG_DISPLAY = {
-    "Moderation": ("🛡️", "Moderation"),
-    "TeamManagement": ("👥", "Team"),
-    "AntiNuke": ("💣", "Anti-Nuke"),
-    "AntiSpam": ("🚫", "Anti-Spam"),
-    "Musik": ("🎵", "Musik"),
-    "Tickets": ("🎫", "Tickets"),
-    "Warteraum": ("🙋", "Warteraum"),
-    "Level": ("📈", "Level"),
-    "Invites": ("📨", "Invites"),
-    "Giveaway": ("🎉", "Gewinnspiele"),
-    "Fun": ("🎈", "Fun"),
-    "InfoHelp": ("ℹ️", "Info"),
+    "Moderation": ("🛡️", "Moderation", "Sicherheit & Moderation"),
+    "TeamManagement": ("👥", "Team", "Sicherheit & Moderation"),
+    "AntiNuke": ("💣", "Anti-Nuke", "Sicherheit & Moderation"),
+    "AntiSpam": ("🚫", "Anti-Spam", "Sicherheit & Moderation"),
+    "AntiHack": ("🕵️", "Anti-Hack", "Sicherheit & Moderation"),
+    "AntiWerbung": ("🔗", "Anti-Werbung", "Sicherheit & Moderation"),
+    "Strafregister": ("📁", "Strafregister", "Sicherheit & Moderation"),
+    "AutoRole": ("🤖", "Autorole", "Server-Einrichtung"),
+    "Language": ("🌐", "Sprache", "Server-Einrichtung"),
+    "Musik": ("🎵", "Musik", "Musik"),
+    "Tickets": ("🎫", "Tickets", "Tickets & Warteraum"),
+    "Warteraum": ("🙋", "Warteraum", "Tickets & Warteraum"),
+    "Level": ("📈", "Level", "Community"),
+    "Invites": ("📨", "Invites", "Community"),
+    "Giveaway": ("🎉", "Gewinnspiele", "Community"),
+    "Fun": ("🎈", "Fun", "Community"),
+    "InfoHelp": ("ℹ️", "Info", "Sonstiges"),
 }
+CATEGORY_ORDER = [
+    "Sicherheit & Moderation", "Server-Einrichtung", "Musik", "Tickets & Warteraum",
+    "Community", "Sonstiges",
+]
+CATEGORY_EMOJI = {
+    "Sicherheit & Moderation": "🛡️", "Server-Einrichtung": "⚙️", "Musik": "🎵",
+    "Tickets & Warteraum": "🎫", "Community": "🌟", "Sonstiges": "📦",
+}
+
+
+def _collect_commands_by_category(bot: commands.Bot) -> dict[str, list[tuple[str, str]]]:
+    """Baut {kategorie: [(befehl, beschreibung), ...]} aus allen geladenen Cogs."""
+    by_category: dict[str, list[tuple[str, str]]] = {c: [] for c in CATEGORY_ORDER}
+
+    for cog_name, cog in sorted(bot.cogs.items()):
+        _, _, category = COG_DISPLAY.get(cog_name, ("📦", cog_name, "Sonstiges"))
+        by_category.setdefault(category, [])
+
+        for cmd in cog.get_commands():
+            if isinstance(cmd, commands.Group):
+                for sub in cmd.commands:
+                    desc = sub.description or "—"
+                    by_category[category].append((f"/{cmd.name} {sub.name}", desc))
+            else:
+                desc = cmd.description or "—"
+                by_category[category].append((f"/{cmd.name}", desc))
+
+    return {cat: cmds for cat, cmds in by_category.items() if cmds}
+
+
+def _build_category_embed(lang: str, category: str, entries: list[tuple[str, str]]) -> discord.Embed:
+    emoji = CATEGORY_EMOJI.get(category, "📦")
+    embed = base_embed(f"{emoji} {category}")
+    lines = [f"**`{name}`** — {desc}" for name, desc in entries]
+    # Embed-Beschreibungslimit (4096 Zeichen) im Blick behalten -- bei sehr
+    # befehlsreichen Kategorien lieber sauber abschneiden als einen Fehler zu riskieren.
+    description = "\n".join(lines)
+    if len(description) > 3900:
+        description = description[:3900] + ("\n… weitere Befehle nicht angezeigt." if lang == "de"
+                                              else "\n… more commands not shown.")
+    embed.description = description
+    embed.set_footer(text=f"{len(entries)} Befehle in dieser Kategorie" if lang == "de"
+                      else f"{len(entries)} commands in this category")
+    return embed
+
+
+class HelpCategorySelect(discord.ui.Select):
+    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
+        self.by_category = by_category
+        self.lang = lang
+        options = [
+            discord.SelectOption(label=cat, emoji=CATEGORY_EMOJI.get(cat, "📦"),
+                                  description=f"{len(cmds)} Befehle" if lang == "de" else f"{len(cmds)} commands")
+            for cat, cmds in by_category.items()
+        ]
+        placeholder = "Kategorie wählen..." if lang == "de" else "Choose a category..."
+        super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        category = self.values[0]
+        embed = _build_category_embed(self.lang, category, self.by_category[category])
+        await interaction.response.edit_message(embed=embed)
+
+
+class HelpView(discord.ui.View):
+    def __init__(self, by_category: dict[str, list[tuple[str, str]]], lang: str):
+        super().__init__(timeout=120)
+        self.add_item(HelpCategorySelect(by_category, lang))
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
 
 
 class InfoHelp(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", description="Zeigt alle verfügbaren Befehle mit Beschreibung.")
+    @commands.hybrid_command(name="help", description="Zeigt alle verfügbaren Befehle, gruppiert nach Kategorie.")
     async def help_command(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id) if ctx.guild else "de"
+        by_category = _collect_commands_by_category(self.bot)
+        total_commands = sum(len(cmds) for cmds in by_category.values())
 
         embed = base_embed(t("help.title", lang))
-        total_commands = 0
-        total_chars = len(embed.title or "")
-
-        for cog_name, cog in sorted(self.bot.cogs.items()):
-            lines = []
-            for cmd in cog.get_commands():
-                if isinstance(cmd, commands.Group):
-                    for sub in cmd.commands:
-                        lines.append(f"`/{cmd.name} {sub.name}`")
-                        total_commands += 1
-                else:
-                    lines.append(f"`/{cmd.name}`")
-                    total_commands += 1
-
-            if not lines:
+        overview_lines = []
+        for cat in CATEGORY_ORDER:
+            if cat not in by_category:
                 continue
-
-            emoji, display_name = COG_DISPLAY.get(cog_name, ("📦", cog_name))
-            value = " ".join(lines)
-            if len(value) > 1000:  # Discord-Embed-Feldlimit (1024) mit Puffer
-                value = value[:1000] + " ..."
-
-            # Discord begrenzt nicht nur jedes Feld einzeln, sondern auch das
-            # GESAMTE Embed auf 6000 Zeichen -- bei über 70 Befehlen inzwischen
-            # real relevant. Sicherheitsmarge bei 5500, danach nur noch ein
-            # Sammel-Hinweis statt eines weiteren vollen Feldes.
-            field_name = f"{emoji} {display_name}"
-            if total_chars + len(field_name) + len(value) > 5500:
-                embed.add_field(
-                    name="…" if lang == "de" else "…",
-                    value=("Es gibt noch mehr Befehle, als in eine Nachricht passen — frag ein "
-                           "Team-Mitglied oder schau in der Dokumentation nach der vollständigen Liste."
-                           if lang == "de" else
-                           "There are more commands than fit in one message — ask a team member "
-                           "or check the documentation for the full list."),
-                    inline=False,
-                )
-                break
-
-            embed.add_field(name=field_name, value=value, inline=False)
-            total_chars += len(field_name) + len(value)
-
+            emoji = CATEGORY_EMOJI.get(cat, "📦")
+            count = len(by_category[cat])
+            plural = "Befehle" if lang == "de" else "commands"
+            overview_lines.append(f"{emoji} **{cat}** — {count} {plural}")
+        embed.description = (
+            ("Wähle unten eine Kategorie aus, um die Befehle mit Beschreibung zu sehen.\n\n"
+             if lang == "de" else
+             "Pick a category below to see its commands with descriptions.\n\n")
+            + "\n".join(overview_lines)
+        )
         embed.set_footer(text=f"{total_commands} Befehle insgesamt" if lang == "de"
                           else f"{total_commands} commands total")
-        await ctx.send(embed=embed)
+
+        view = HelpView(by_category, lang)
+        await ctx.send(embed=embed, view=view)
 
     @commands.hybrid_command(name="serverinfo", description="Zeigt Informationen über diesen Server.")
     @commands.guild_only()

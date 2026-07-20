@@ -16,7 +16,9 @@ load_dotenv()
 
 class Config:
     DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN", "")
-    DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "de")
+    # Sprache, die ein Server bekommt, wenn der Bot ihm zum ersten Mal beitritt
+    # (danach über /language pro Server änderbar). Standard: Englisch.
+    DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "en")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./bot_database.db")
 
     BOT_OWNER_ID: int = int(os.getenv("BOT_OWNER_ID", "0") or "0")

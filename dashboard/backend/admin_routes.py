@@ -45,6 +45,10 @@ from bot.utils.db_helpers import (
     get_admin_groups,
     get_group_members,
     get_effective_admin_permissions,
+    create_news_post,
+    get_news_posts,
+    delete_news_post,
+    set_news_published,
 )
 from bot.database.db import get_session
 from dashboard.backend.config import dashboard_config as cfg
@@ -513,3 +517,43 @@ async def admin_group_delete(request: Request, group_id: int):
         return RedirectResponse("/admin?error=no_permission")
     await delete_permission_group(group_id)
     return RedirectResponse("/admin/groups", status_code=303)
+
+
+@admin_router.get("/admin/news", response_class=HTMLResponse)
+async def admin_news_page(request: Request):
+    denied = await _require_admin(request)
+    if denied:
+        return denied
+    admin = _current_admin(request)
+    posts = await get_news_posts()
+    return templates.TemplateResponse(request, "admin_news.html", {
+        "user": None, "messages": [], "admin": admin, "posts": posts,
+    })
+
+
+@admin_router.post("/admin/news")
+async def admin_news_create(request: Request, title: str = Form(...), content: str = Form(...)):
+    admin = _current_admin(request)
+    if not admin:
+        return RedirectResponse("/admin/login")
+    if title.strip() and content.strip():
+        await create_news_post(title.strip(), content.strip(), admin["id"])
+    return RedirectResponse("/admin/news", status_code=303)
+
+
+@admin_router.post("/admin/news/{post_id}/delete")
+async def admin_news_delete(request: Request, post_id: int):
+    admin = _current_admin(request)
+    if not admin:
+        return RedirectResponse("/admin/login")
+    await delete_news_post(post_id)
+    return RedirectResponse("/admin/news", status_code=303)
+
+
+@admin_router.post("/admin/news/{post_id}/toggle")
+async def admin_news_toggle(request: Request, post_id: int, published: str = Form("")):
+    admin = _current_admin(request)
+    if not admin:
+        return RedirectResponse("/admin/login")
+    await set_news_published(post_id, published == "on")
+    return RedirectResponse("/admin/news", status_code=303)

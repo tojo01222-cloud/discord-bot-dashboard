@@ -5,8 +5,8 @@
 
 <form method="get" action="/admin/servers" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
     <input type="text" name="q" placeholder="Server suchen..." value="{{ q|default('') }}"
-           style="background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
-    <select name="sort" style="background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:10px 14px;border-radius:10px;">
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
+    <select name="sort" style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;">
         <option value="name" {% if sort|default('name') == "name" %}selected{% endif %}>Nach Name</option>
         <option value="members" {% if sort|default('name') == "members" %}selected{% endif %}>Nach Mitgliederzahl</option>
     </select>

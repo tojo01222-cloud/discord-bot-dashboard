@@ -2,7 +2,7 @@
 {% block title %}Mein Account — Admin-Panel{% endblock %}
 {% block content %}
 <h1>Mein Account</h1>
-<p style="color:#a3a3a3;">Angemeldet als <strong>{{ admin.username }}</strong>{% if admin.is_superadmin %} (Superadmin){% endif %}</p>
+<p style="color:#9297ab;">Angemeldet als <strong>{{ admin.username }}</strong>{% if admin.is_superadmin %} (Superadmin){% endif %}</p>
 
 <form method="post" action="/admin/account" class="admin-form" style="margin-top:24px;">
     <div>

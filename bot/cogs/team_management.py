@@ -159,7 +159,7 @@ class TeamManagement(commands.Cog):
     @app_commands.describe(member="Das Teammitglied", reason="Grund")
     @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def teamkick(self, ctx: commands.Context, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+    async def teamkick(self, ctx: commands.Context, member: discord.Member, *, reason: str):
         lang = await get_guild_language(ctx.guild.id)
         ranks = await get_team_ranks(ctx.guild.id)
         team_role_ids = {r.role_id for r in ranks}

@@ -6,7 +6,7 @@
 
 <form method="get" action="/dashboard/{{ guild.id }}/bewerbungen" style="margin-bottom:20px;">
     <select name="status" onchange="this.form.submit()"
-            style="background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:10px 14px;border-radius:8px;">
+            style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:8px;">
         <option value="" {% if not status %}selected{% endif %}>Alle</option>
         <option value="pending" {% if status == "pending" %}selected{% endif %}>Offen</option>
         <option value="accepted" {% if status == "accepted" %}selected{% endif %}>Angenommen</option>
@@ -15,15 +15,15 @@
 </form>
 
 {% if not applications %}
-<p style="color:#a3a3a3;">Keine Bewerbungen gefunden.</p>
+<p style="color:#9297ab;">Keine Bewerbungen gefunden.</p>
 {% else %}
 <div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
     {% for a in applications %}
     <div style="display:flex; justify-content:space-between; align-items:center;
-                background:#0d0d0d; border:1px solid #2a2a2a; border-radius:10px; padding:18px 22px;">
+                background:#14151f; border:1px solid #262838; border-radius:10px; padding:18px 22px;">
         <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}" style="text-decoration:none; color:inherit;">
-            <div style="font-weight:700; color:#ffffff;">{{ a.applicant_username }}</div>
-            <div style="color:#a3a3a3; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
+            <div style="font-weight:700; color:#f5f6fa;">{{ a.applicant_username }}</div>
+            <div style="color:#9297ab; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
         </a>
         <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}/loeschen"
               onsubmit="return confirm('Diese Bewerbung wirklich löschen?');">

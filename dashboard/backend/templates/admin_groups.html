@@ -15,14 +15,14 @@
 </div>
 
 {% if not groups_with_perms %}
-<p style="color:#a3a3a3;">Noch keine Gruppen angelegt.</p>
+<p style="color:#9297ab;">Noch keine Gruppen angelegt.</p>
 {% else %}
 {% for entry in groups_with_perms %}
 <div class="admin-card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
             <strong>{{ entry.group.name }}</strong>
-            <span style="color:#a3a3a3; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
+            <span style="color:#9297ab; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
         </div>
         <a href="/admin/groups/{{ entry.group.id }}" class="btn btn-small btn-ghost">Verwalten</a>
     </div>

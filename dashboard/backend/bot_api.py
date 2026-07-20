@@ -127,3 +127,103 @@ async def ban_member(guild_id: int, user_id: int, reason: str) -> bool:
             f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/bans/{user_id}", headers=headers, json={},
         )
         return resp.status_code in (200, 204)
+
+
+async def fetch_guild_members(guild_id: int, limit: int = 1000) -> list[dict]:
+    """Holt ALLE Mitglieder eines Servers (paginiert, Discord liefert max.
+    1000 pro Aufruf) -- fürs Dashboard-"Autorole an alle vergeben"."""
+    if not DISCORD_TOKEN:
+        return []
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    members: list[dict] = []
+    after = "0"
+    async with httpx.AsyncClient() as client:
+        while True:
+            resp = await client.get(
+                f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members",
+                headers=headers, params={"limit": 1000, "after": after},
+            )
+            if resp.status_code != 200:
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            members.extend(batch)
+            if len(batch) < 1000 or len(members) >= limit:
+                break
+            after = batch[-1]["user"]["id"]
+    return members
+
+
+async def add_role_to_member(guild_id: int, user_id: int, role_id: int, reason: str = "") -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "X-Audit-Log-Reason": reason[:400]}
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}/roles/{role_id}", headers=headers,
+        )
+        return resp.status_code in (200, 204)
+
+
+async def set_channel_slowmode(channel_id: int, seconds: int) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers,
+            json={"rate_limit_per_user": seconds},
+        )
+        return resp.status_code == 200
+
+
+async def set_channel_lock(guild_id: int, channel_id: int, locked: bool) -> bool:
+    """Sperrt/entsperrt einen Kanal für @everyone (send_messages=False bzw.
+    zurück auf Server-Standard). WICHTIG: die Discord-API ersetzt bei einem
+    PUT die KOMPLETTE Berechtigung für ein Ziel, nicht nur ein einzelnes Bit
+    -- deshalb erst die bestehenden allow/deny-Werte abfragen und nur das
+    SEND_MESSAGES-Bit (1<<11) gezielt ändern, statt versehentlich alle
+    anderen bereits gesetzten Berechtigungen für @everyone zu löschen."""
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    send_messages_bit = 1 << 11
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers)
+        if resp.status_code != 200:
+            return False
+        channel_data = resp.json()
+
+        existing_allow, existing_deny = 0, 0
+        for overwrite in channel_data.get("permission_overwrites", []):
+            if overwrite.get("id") == str(guild_id) and overwrite.get("type") == 0:
+                existing_allow = int(overwrite.get("allow", 0))
+                existing_deny = int(overwrite.get("deny", 0))
+                break
+
+        if locked:
+            new_deny = existing_deny | send_messages_bit
+            new_allow = existing_allow & ~send_messages_bit
+        else:
+            new_deny = existing_deny & ~send_messages_bit
+            new_allow = existing_allow  # nicht explizit erlauben, nur die Sperre aufheben
+
+        put_resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/permissions/{guild_id}",
+            headers=headers, json={"allow": str(new_allow), "deny": str(new_deny), "type": 0},
+        )
+        return put_resp.status_code in (200, 204)
+
+
+async def set_member_nickname(guild_id: int, user_id: int, nickname: str) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}", headers=headers,
+            json={"nick": nickname or None},
+        )
+        return resp.status_code == 200

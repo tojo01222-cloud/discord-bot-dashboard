@@ -8,10 +8,13 @@ einzelnen Route manuell mitgegeben werden.
 from starlette.requests import Request
 
 from dashboard.backend.config import dashboard_config as cfg
+from dashboard.backend.web_i18n import wt
 
 
 def global_template_context(request: Request) -> dict:
     return {
         "operator_username": cfg.OPERATOR_DISCORD_USERNAME,
         "operator_invite": cfg.OPERATOR_DISCORD_INVITE,
+        "site_lang": request.session.get("site_lang", "en"),
+        "wt": wt,
     }

@@ -3,6 +3,10 @@ Moderations-Befehle: kick, ban, unban, timeout, warn, clear.
 
 Alle Befehle sind Hybrid-Commands -> funktionieren als /befehl und !befehl.
 Berechtigung: mindestens MODERATOR (siehe bot/utils/permissions.py).
+
+Bei kick/ban/timeout/warn ist reason PFLICHT (kein Standardwert mehr) --
+das Strafregister (siehe bot/cogs/strafregister.py) soll immer einen echten
+Grund zeigen, nie nur "Kein Grund angegeben".
 """
 import discord
 from discord import app_commands
@@ -17,6 +21,8 @@ from bot.utils.db_helpers import (
     log_punishment,
     get_user_punishments,
     deactivate_punishment,
+    add_staff_note,
+    get_staff_notes,
 )
 
 
@@ -36,7 +42,7 @@ class Moderation(commands.Cog):
     @app_commands.describe(member="Das zu kickende Mitglied", reason="Grund für den Kick")
     @commands.guild_only()
     @require_level(PermissionLevel.MODERATOR)
-    async def kick(self, ctx: commands.Context, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+    async def kick(self, ctx: commands.Context, member: discord.Member, *, reason: str):
         lang = await get_guild_language(ctx.guild.id)
 
         if member.id == ctx.author.id:
@@ -60,7 +66,7 @@ class Moderation(commands.Cog):
     @app_commands.describe(member="Das zu bannende Mitglied", reason="Grund für den Bann")
     @commands.guild_only()
     @require_level(PermissionLevel.MODERATOR)
-    async def ban(self, ctx: commands.Context, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+    async def ban(self, ctx: commands.Context, member: discord.Member, *, reason: str):
         lang = await get_guild_language(ctx.guild.id)
 
         if member.id == ctx.author.id:
@@ -107,7 +113,7 @@ class Moderation(commands.Cog):
     @commands.guild_only()
     @require_level(PermissionLevel.MODERATOR)
     async def timeout(self, ctx: commands.Context, member: discord.Member, duration: str,
-                       *, reason: str = "Kein Grund angegeben"):
+                       *, reason: str):
         lang = await get_guild_language(ctx.guild.id)
 
         if member.id == ctx.author.id:
@@ -138,7 +144,7 @@ class Moderation(commands.Cog):
     @warn.command(name="add", description="Fügt einem Mitglied eine Verwarnung hinzu.")
     @app_commands.describe(member="Das Mitglied", reason="Grund der Verwarnung")
     @require_level(PermissionLevel.MODERATOR)
-    async def warn_add(self, ctx: commands.Context, member: discord.Member, *, reason: str = "Kein Grund angegeben"):
+    async def warn_add(self, ctx: commands.Context, member: discord.Member, *, reason: str):
         lang = await get_guild_language(ctx.guild.id)
         await log_punishment(ctx.guild.id, member.id, ctx.author.id, "warn", reason)
         await ctx.send(embed=success_embed(t("moderation.warn_added", lang, user=member.mention, reason=reason)))
@@ -223,6 +229,110 @@ class Moderation(commands.Cog):
         await ctx.send(embed=success_embed(
             "Nachrichten gelöscht" if lang == "de" else "Messages cleared", summary,
         ), ephemeral=True)
+
+    # ---------- PURGE_USER ----------
+    @commands.hybrid_command(name="purge_user", description="Löscht die letzten Nachrichten eines bestimmten Users in diesem Kanal.")
+    @app_commands.describe(member="Der User, dessen Nachrichten gelöscht werden", anzahl="Wie viele Nachrichten durchsucht werden (1-1000, Standard 100)")
+    @commands.guild_only()
+    @require_level(PermissionLevel.MODERATOR)
+    async def purge_user(self, ctx: commands.Context, member: discord.Member, anzahl: int = 100):
+        lang = await get_guild_language(ctx.guild.id)
+        if anzahl < 1 or anzahl > 1000:
+            await ctx.send(embed=error_embed(
+                "Die Anzahl muss zwischen 1 und 1000 liegen." if lang == "de"
+                else "The amount must be between 1 and 1000."), ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+        try:
+            deleted = await ctx.channel.purge(limit=anzahl, check=lambda m: m.author.id == member.id)
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                "Mir fehlt die Berechtigung 'Nachrichten verwalten'." if lang == "de"
+                else "I'm missing the 'Manage Messages' permission."), ephemeral=True)
+            return
+
+        await ctx.send(embed=success_embed(
+            (f"{len(deleted)} Nachrichten von {member.mention} gelöscht (von den letzten {anzahl} "
+             f"durchsuchten Nachrichten)." if lang == "de" else
+             f"Deleted {len(deleted)} messages from {member.mention} (out of the last {anzahl} "
+             f"messages searched).")
+        ), ephemeral=True)
+
+    # ---------- TIMEOUT_ENTFERNEN ----------
+    @commands.hybrid_command(name="timeout_entfernen", description="Entfernt einen aktiven Timeout vorzeitig.")
+    @app_commands.describe(member="Das Mitglied")
+    @commands.guild_only()
+    @require_level(PermissionLevel.MODERATOR)
+    async def timeout_entfernen(self, ctx: commands.Context, member: discord.Member):
+        lang = await get_guild_language(ctx.guild.id)
+        if not member.is_timed_out():
+            await ctx.send(embed=error_embed(
+                "Dieses Mitglied ist aktuell nicht im Timeout." if lang == "de"
+                else "This member isn't currently timed out."), ephemeral=True)
+            return
+
+        try:
+            await member.timeout(None, reason=f"Timeout vorzeitig entfernt von {ctx.author}")
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                "Ich kann den Timeout dieses Mitglieds nicht entfernen (höhere Rolle oder fehlende "
+                "Berechtigung)." if lang == "de" else
+                "I can't remove this member's timeout (higher role or missing permission)."))
+            return
+
+        await ctx.send(embed=success_embed(
+            f"Timeout von {member.mention} entfernt." if lang == "de"
+            else f"Removed timeout from {member.mention}."))
+
+    # ---------- SAY ----------
+    @commands.hybrid_command(name="say", description="Lässt den Bot eine Nachricht in einem Kanal senden.")
+    @app_commands.describe(kanal="Zielkanal", nachricht="Die zu sendende Nachricht")
+    @commands.guild_only()
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def say(self, ctx: commands.Context, kanal: discord.TextChannel, *, nachricht: str):
+        lang = await get_guild_language(ctx.guild.id)
+        try:
+            await kanal.send(nachricht)
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                f"Ich kann in {kanal.mention} nicht schreiben (fehlende Berechtigung)." if lang == "de"
+                else f"I can't send messages in {kanal.mention} (missing permission)."), ephemeral=True)
+            return
+        await ctx.send(embed=success_embed(
+            f"Nachricht in {kanal.mention} gesendet." if lang == "de"
+            else f"Message sent in {kanal.mention}."), ephemeral=True)
+
+    # ---------- NOTE / NOTES (Team-interne Notizen, nicht Teil des Strafregisters) ----------
+    @commands.hybrid_command(name="note", description="Fügt eine team-interne Notiz zu einem User hinzu (nicht sichtbar für den User).")
+    @app_commands.describe(member="Das Mitglied", text="Die Notiz")
+    @commands.guild_only()
+    @require_level(PermissionLevel.TEAM)
+    async def note(self, ctx: commands.Context, member: discord.Member, *, text: str):
+        lang = await get_guild_language(ctx.guild.id)
+        await add_staff_note(ctx.guild.id, member.id, text, ctx.author.id)
+        await ctx.send(embed=success_embed(
+            f"Notiz zu {member.mention} gespeichert." if lang == "de"
+            else f"Note saved for {member.mention}."), ephemeral=True)
+
+    @commands.hybrid_command(name="notes", description="Zeigt alle team-internen Notizen zu einem User.")
+    @app_commands.describe(member="Das Mitglied")
+    @commands.guild_only()
+    @require_level(PermissionLevel.TEAM)
+    async def notes(self, ctx: commands.Context, member: discord.Member):
+        lang = await get_guild_language(ctx.guild.id)
+        entries = await get_staff_notes(ctx.guild.id, member.id)
+        if not entries:
+            await ctx.send(embed=error_embed(
+                f"Keine Notizen zu {member.mention}." if lang == "de"
+                else f"No notes for {member.mention}."), ephemeral=True)
+            return
+
+        embed = success_embed(f"Notizen zu {member.display_name}" if lang == "de" else f"Notes for {member.display_name}")
+        embed.description = "\n".join(
+            f"#{e.id} — {e.note} (<@{e.created_by}>, {e.created_at.strftime('%d.%m.%Y')})" for e in entries[:20]
+        )
+        await ctx.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
