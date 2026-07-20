@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Bot Dashboard{% endblock %}
+{% block content %}
+<div class="hero">
+    <h1>Dein Discord-Bot, komplett unter Kontrolle</h1>
+    <p>Moderation, Team-Verwaltung, Musik, Tickets, Bewerbungen und mehr — alles an einem Ort,
+       für jeden Server, auf dem du Admin bist.</p>
+    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
+        <a href="/login" class="btn btn-discord">🎮 Zum Server-Dashboard</a>
+        <a href="/admin/login" class="btn btn-ghost">🛡️ Zum Admin-Bereich</a>
+    </div>
+</div>
+
+<div class="feature-grid">
+    <div class="feature-card">
+        <div class="icon">🛡️</div>
+        <h3>Moderation & Sicherheit</h3>
+        <p>Anti-Nuke, Anti-Spam, Anti-Hack, Anti-Werbung, Team-Ränge und ein vollständiges Strafregister — direkt einstellbar.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🎵</div>
+        <h3>Musik & Radio</h3>
+        <p>YouTube-Wiedergabe und echte Live-Radiosender, dauerhaft in deinem Sprachkanal.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🎫</div>
+        <h3>Tickets & Warteraum</h3>
+        <p>Professionelle Support-Panels mit mehreren Designs und automatischer Hilfe-Erkennung.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">📝</div>
+        <h3>Bewerbungssystem</h3>
+        <p>Eigene Bewerbungsformulare für dein Team — Bewerber:innen füllen sie direkt hier aus.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">📈</div>
+        <h3>Level & Community</h3>
+        <p>XP-System, Invite-Tracking und Gewinnspiele — Bewegung und Beteiligung auf deinem Server sichtbar machen.</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🌐</div>
+        <h3>Mehrsprachig & Autorole</h3>
+        <p>Deutsch oder Englisch pro Server, automatische Rollenvergabe für Mitglieder, Bots und Admins getrennt.</p>
+    </div>
+</div>
+
+<p class="small-print" style="text-align:center; margin-top:48px;">
+    <a href="/impressum">Impressum</a> ·
+    <a href="/datenschutz">Datenschutz</a>
+</p>
+{% endblock %}

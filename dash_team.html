@@ -1,0 +1,17 @@
+{% extends "admin_base.html" %}
+{% block title %}Ankündigungen — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Globale Ankündigung</h1>
+<p style="color:#9297ab; font-size:14px;">
+    Wird an den eingerichteten Ankündigungs-Kanal auf allen {{ guild_count }} Servern gesendet
+    (nur Server, wo im Server-Dashboard ein Ankündigungs-Kanal ausgewählt wurde).
+</p>
+
+<form method="post" action="/admin/broadcast" class="admin-form">
+    <div>
+        <label for="message">Nachricht</label>
+        <textarea id="message" name="message" required placeholder="Deine Ankündigung..."></textarea>
+    </div>
+    <button type="submit" class="btn">An alle Server senden</button>
+</form>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Ankündigung — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
+<h1>Ankündigung — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/ankuendigung" class="settings-form">
+    <div class="field">
+        <label for="channel_id">Kanal</label>
+        <select name="channel_id" id="channel_id">
+            {% for ch in channels %}
+            <option value="{{ ch.id }}">#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="message">Nachricht</label>
+        <textarea id="message" name="message" required rows="4"
+                  style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:8px;font-family:inherit;"></textarea>
+    </div>
+    <button type="submit" class="btn">Senden</button>
+</form>
+{% endblock %}

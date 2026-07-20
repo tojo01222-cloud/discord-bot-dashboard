@@ -1,0 +1,13 @@
+{% extends "admin_base.html" %}
+{% block title %}System — Admin-Panel{% endblock %}
+{% block content %}
+<h1>System-Info</h1>
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Python-Version</th><td>{{ system_info.python_version }}</td></tr>
+        <tr><th>Plattform</th><td>{{ system_info.platform }}</td></tr>
+        <tr><th>Datenbank</th><td>{{ "Erreichbar" if system_info.database_ok else "Nicht erreichbar" }}</td></tr>
+        <tr><th>Wartungsmodus</th><td>{{ "Aktiv" if system_info.maintenance_mode else "Inaktiv" }}</td></tr>
+    </table>
+</div>
+{% endblock %}

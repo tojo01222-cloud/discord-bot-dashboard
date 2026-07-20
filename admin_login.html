@@ -1,0 +1,23 @@
+{% extends "admin_base.html" %}
+{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Ankündigungs-Historie</h1>
+<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+
+{% if not announcements %}
+<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
+{% else %}
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
+        {% for a in announcements %}
+        <tr>
+            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
+            <td>{{ a.guild_count }}</td>
+            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}

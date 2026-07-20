@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Tickets — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
+<h1>Tickets — {{ guild.name }}</h1>
+
+{% if not tickets %}
+<p style="color:#9297ab;">Noch keine Tickets vorhanden.</p>
+{% else %}
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:10px; padding:0;">
+    <table class="admin-table">
+        <tr><th>Status</th><th>Ersteller</th><th>Design</th><th>Erstellt am</th></tr>
+        {% for t in tickets %}
+        <tr>
+            <td>{{ t.status }}</td>
+            <td>{{ t.creator_id }}</td>
+            <td>{{ t.design }}</td>
+            <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}
