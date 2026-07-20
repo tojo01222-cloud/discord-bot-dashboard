@@ -1,50 +1,13 @@
-{% extends "base.html" %}
-{% block title %}Bot Dashboard{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}System — Admin-Panel{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'landing_title') }}</h1>
-    <p>{{ wt(site_lang, 'landing_subtitle') }}</p>
-    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
-        <a href="/login" class="btn btn-discord">🎮 {{ wt(site_lang, 'landing_btn_dashboard') }}</a>
-        <a href="/admin/login" class="btn btn-ghost">🛡️ {{ wt(site_lang, 'landing_btn_admin') }}</a>
-    </div>
+<h1>System-Info</h1>
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Python-Version</th><td>{{ system_info.python_version }}</td></tr>
+        <tr><th>Plattform</th><td>{{ system_info.platform }}</td></tr>
+        <tr><th>Datenbank</th><td>{{ "Erreichbar" if system_info.database_ok else "Nicht erreichbar" }}</td></tr>
+        <tr><th>Wartungsmodus</th><td>{{ "Aktiv" if system_info.maintenance_mode else "Inaktiv" }}</td></tr>
+    </table>
 </div>
-
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">🛡️</div>
-        <h3>{{ wt(site_lang, 'feature1_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature1_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎵</div>
-        <h3>{{ wt(site_lang, 'feature2_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature2_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎫</div>
-        <h3>{{ wt(site_lang, 'feature3_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature3_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📝</div>
-        <h3>{{ wt(site_lang, 'feature4_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature4_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📈</div>
-        <h3>{{ wt(site_lang, 'feature5_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature5_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🌐</div>
-        <h3>{{ wt(site_lang, 'feature6_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature6_desc') }}</p>
-    </div>
-</div>
-
-<p class="small-print" style="text-align:center; margin-top:48px;">
-    <a href="/impressum">Impressum</a> ·
-    <a href="/datenschutz">Datenschutz</a>
-</p>
 {% endblock %}
