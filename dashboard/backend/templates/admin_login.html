@@ -1,29 +1,36 @@
-{% extends "base.html" %}
-{% block title %}Bewerbung von {{ application.applicant_username }}{% endblock %}
-{% block content %}
-<a href="/dashboard/{{ guild.id }}/bewerbungen" class="back-link">← Zurück zur Liste</a>
-<h1>Bewerbung von {{ application.applicant_username }}</h1>
-<p style="color:#9297ab; font-size:13px;">Eingereicht am {{ application.submitted_at.strftime('%d.%m.%Y %H:%M') }} — Status: {{ application.status }}</p>
-
-<div style="display:flex; flex-direction:column; gap:20px; margin-top:24px;">
-    {% for ans in answers %}
-    <div style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:20px;">
-        <div style="color:#9297ab; font-size:13px; margin-bottom:8px;">{{ ans.question_text }}</div>
-        <div>{{ ans.answer_text }}</div>
-    </div>
-    {% endfor %}
-</div>
-
-{% if application.status == "pending" %}
-<div style="display:flex; gap:12px; margin-top:28px;">
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="accepted">
-        <button type="submit" class="btn">Annehmen</button>
-    </form>
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="rejected">
-        <button type="submit" class="btn btn-ghost">Ablehnen</button>
-    </form>
-</div>
-{% endif %}
-{% endblock %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="content">
+        <div class="login-box">
+            <h1>Admin-Panel</h1>
+            <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            <form method="post" action="/admin/login" class="settings-form" style="text-align:left; margin-top:20px;">
+                <div class="field">
+                    <label for="username">Benutzername</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="field">
+                    <label for="password">Passwort</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn">Anmelden</button>
+            </form>
+            {% if operator_invite %}
+            <p class="small-print">
+                <a href="{{ operator_invite }}" target="_blank" style="color:#9297ab;">Unserem Discord beitreten</a>
+            </p>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>
