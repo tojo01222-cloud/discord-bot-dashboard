@@ -1,23 +1,52 @@
 {% extends "admin_base.html" %}
-{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% block title %}{{ group.name }} — Admin-Panel{% endblock %}
 {% block content %}
-<h1>Ankündigungs-Historie</h1>
-<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+<a href="/admin/groups" class="back-link">Zurück zu den Gruppen</a>
+<h1>{{ group.name }}</h1>
 
-{% if not announcements %}
-<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
-{% else %}
 <div class="admin-card">
-    <table class="admin-table">
-        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
-        {% for a in announcements %}
-        <tr>
-            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
-            <td>{{ a.guild_count }}</td>
-            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
-        </tr>
+    <h2 style="font-size:16px; margin-bottom:12px;">Rechte dieser Gruppe</h2>
+    <form method="post" action="/admin/groups/{{ group.id }}/permissions" class="admin-form">
+        {% for perm in all_permissions %}
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#f5f6fa;">
+            <input type="checkbox" name="perm_{{ perm }}" value="on" {% if perm in permissions %}checked{% endif %}>
+            {{ perm }}
+        </label>
         {% endfor %}
-    </table>
+        <button type="submit" class="btn btn-small">Speichern</button>
+    </form>
 </div>
-{% endif %}
+
+<div class="admin-card">
+    <h2 style="font-size:16px; margin-bottom:12px;">Mitglieder ({{ members|length }})</h2>
+    {% for m in members %}
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #262838;">
+        <span>{{ m.username }}</span>
+        <form method="post" action="/admin/groups/{{ group.id }}/members/{{ m.id }}/remove">
+            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+        </form>
+    </div>
+    {% else %}
+    <p style="color:#9297ab;">Noch keine Mitglieder.</p>
+    {% endfor %}
+
+    {% if non_members %}
+    <form method="post" action="/admin/groups/{{ group.id }}/members/add" class="admin-form" style="margin-top:16px;">
+        <div>
+            <label for="admin_id">Admin hinzufügen</label>
+            <select name="admin_id" id="admin_id">
+                {% for a in non_members %}
+                <option value="{{ a.id }}">{{ a.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-small">Hinzufügen</button>
+    </form>
+    {% endif %}
+</div>
+
+<form method="post" action="/admin/groups/{{ group.id }}/delete"
+      onsubmit="return confirm('Diese Gruppe wirklich löschen?');">
+    <button type="submit" class="btn btn-small btn-ghost">Gruppe löschen</button>
+</form>
 {% endblock %}

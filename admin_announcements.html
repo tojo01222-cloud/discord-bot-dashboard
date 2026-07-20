@@ -1,29 +1,105 @@
 {% extends "base.html" %}
-{% block title %}Apply for our Team{% endblock %}
+{% block title %}Moderation — {{ guild.name }}{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'apply_title') }}</h1>
-    <p>{{ wt(site_lang, 'apply_subtitle') }}</p>
-    {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 {{ wt(site_lang, 'apply_btn') }}</a>
-    {% endif %}
-</div>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Moderation — {{ guild.name }}</h1>
+<p style="font-size:13px;">
+    Kick/Bann/Nickname/Autorole-Aktionen laufen direkt über die Discord-API, ohne die
+    Rollen-Hierarchie-Prüfung der entsprechenden Discord-Befehle. Der Zugriff hier ist über
+    deine "Server verwalten"-Berechtigung für genau diesen Server abgesichert.
+</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">1️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step1_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step1_desc') }}</p>
+<div class="settings-form">
+    <div>
+        <h2>Kick</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/kick" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Kicken</button>
+        </form>
     </div>
-    <div class="feature-card">
-        <div class="icon">2️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step2_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step2_desc') }}</p>
+    <div>
+        <h2>Bann</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/ban" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Bannen</button>
+        </form>
     </div>
-    <div class="feature-card">
-        <div class="icon">3️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step3_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step3_desc') }}</p>
+    <div>
+        <h2>Verwarnung</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/warn" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Verwarnen</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>🤖 Autorole an alle vergeben</h2>
+        <p style="font-size:12px;">Vergibt eine Rolle rückwirkend an ALLE aktuellen (menschlichen) Mitglieder.</p>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/autorole-all" class="settings-form">
+            <div class="field">
+                <label>Rolle</label>
+                <select name="role_id">
+                    {% for role in roles %}
+                    <option value="{{ role.id }}">{{ role.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-small btn-pink">An alle vergeben</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>🐌 Slowmode</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/slowmode" class="settings-form">
+            <div class="field">
+                <label>Kanal</label>
+                <select name="channel_id">
+                    {% for ch in channels %}
+                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field"><label>Sekunden (0 = aus)</label><input type="number" name="seconds" min="0" max="21600" value="0"></div>
+            <button type="submit" class="btn btn-small">Setzen</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>🔒 Kanal sperren / entsperren</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/lock" class="settings-form" style="margin-bottom:10px;">
+            <div class="field">
+                <label>Kanal</label>
+                <select name="channel_id">
+                    {% for ch in channels %}
+                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-small btn-ghost">Sperren</button>
+        </form>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/unlock" class="settings-form">
+            <div class="field">
+                <label>Kanal</label>
+                <select name="channel_id">
+                    {% for ch in channels %}
+                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-small btn-green">Entsperren</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>✏️ Spitzname ändern</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/nickname" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Neuer Spitzname (leer = zurücksetzen)</label><input type="text" name="nickname"></div>
+            <button type="submit" class="btn btn-small">Ändern</button>
+        </form>
     </div>
 </div>
 {% endblock %}

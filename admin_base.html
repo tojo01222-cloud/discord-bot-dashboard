@@ -1,54 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Ticket-Arten — {{ guild.name }}{% endblock %}
+{% block title %}Login — Bot Dashboard{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Ticket-Arten — {{ guild.name }}</h1>
-<p style="font-size:13px;">Diese Arten erscheinen im Auswahlmenü des Ticket-Panels. <a href="/dashboard/{{ guild.id }}/tickets/panel-senden">→ Panel senden</a></p>
-
-{% for entry in categories %}
-<div style="padding:14px 0; border-bottom:1px solid #262838;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span>{{ entry.category.emoji }} <strong>{{ entry.category.name }}</strong>
-            {% if entry.category.max_concurrent %}
-            — Auslastung: {{ entry.open_count }}/{{ entry.category.max_concurrent }}
-            {% endif %}
-            {% if entry.category.ping_role_id %}
-            — Ping: Rollen-ID {{ entry.category.ping_role_id }}
-            {% endif %}
-        </span>
-        <form method="post" action="/dashboard/{{ guild.id }}/tickets/kategorien/{{ entry.category.id }}/loeschen">
-            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-        </form>
-    </div>
-    {% if entry.category.description %}<p style="margin:6px 0 0;">{{ entry.category.description }}</p>{% endif %}
+<div class="login-box">
+    <h1>Willkommen </h1>
+    <p>Melde dich mit deinem Discord-Account an, um deine Server zu verwalten.</p>
+    <a href="/login" class="btn btn-discord">Mit Discord anmelden</a>
+    <p class="small-print">
+        Beim Login werden dein Discord-Name, dein Avatar und deine Server-Mitgliedschaften
+        gespeichert, damit wir dir die richtigen Server anzeigen können. Details siehe
+        <a href="/datenschutz" style="color:#9297ab;">Datenschutzerklärung</a>.
+    </p>
 </div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Ticket-Arten eingerichtet.</p>
-{% endfor %}
-
-<form method="post" action="/dashboard/{{ guild.id }}/tickets/kategorien" class="settings-form" style="margin-top:24px;">
-    <div class="field"><label>Name</label><input type="text" name="name" required></div>
-    <div class="field"><label>Emoji</label><input type="text" name="emoji" value="🎫"></div>
-    <div class="field"><label>Beschreibung</label><input type="text" name="description"></div>
-    <div class="field">
-        <label>Eigene Kanal-Kategorie (optional)</label>
-        <select name="channel_category_id">
-            <option value="0">— Standard-Kategorie nutzen —</option>
-            {% for cat in discord_categories %}
-            <option value="{{ cat.id }}">{{ cat.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="field"><label>Maximal gleichzeitig offen (0 = unbegrenzt)</label><input type="number" name="max_concurrent" min="0" value="0"></div>
-    <div class="field">
-        <label>Ping-Rolle bei neuem Ticket (optional)</label>
-        <select name="ping_role_id">
-            <option value="0">— keine —</option>
-            {% for role in roles %}
-            <option value="{{ role.id }}">{{ role.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Ticket-Art hinzufügen</button>
-</form>
 {% endblock %}

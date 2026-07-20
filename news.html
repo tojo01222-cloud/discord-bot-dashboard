@@ -1,37 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Werbung — {{ guild.name }}{% endblock %}
+{% block title %}Anti-Nuke-Whitelist — {{ guild.name }}{% endblock %}
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Werbung & Partner — {{ guild.name }}</h1>
+<h1>Anti-Nuke-Whitelist — {{ guild.name }}</h1>
+<p style="color:#9297ab; font-size:13px;">User auf dieser Liste lösen die Anti-Nuke-Erkennung nie aus (der Server-Owner ist immer automatisch ausgenommen).</p>
 
-<form method="post" action="/dashboard/{{ guild.id }}/werbung/kanal" class="settings-form">
-    <div class="field">
-        <label>Werbe-Kanal</label>
-        <select name="channel_id">
-            <option value="0">— kein Kanal ausgewählt —</option>
-            {% for ch in channels %}
-            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Speichern</button>
-</form>
-
-<h2 style="margin-top:32px;">Partner ({{ partners|length }})</h2>
-{% for p in partners %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span><strong>{{ p.name }}</strong> — <a href="{{ p.invite_link }}" target="_blank">{{ p.invite_link }}</a></span>
-    <form method="post" action="/dashboard/{{ guild.id }}/werbung/partner/{{ p.id }}/loeschen">
+{% if not trusted %}
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% else %}
+{% for t in trusted %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>Discord-ID {{ t.user_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste/{{ t.user_id }}/entfernen">
         <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
     </form>
 </div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Partner eingetragen.</p>
 {% endfor %}
+{% endif %}
 
-<form method="post" action="/dashboard/{{ guild.id }}/werbung/partner" class="settings-form" style="margin-top:20px;">
-    <div class="field"><label>Name</label><input type="text" name="name" required></div>
-    <div class="field"><label>Einladungslink</label><input type="text" name="invite_link" required></div>
-    <button type="submit" class="btn btn-small">Partner hinzufügen</button>
+<form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="discord_id">Discord-User-ID</label>
+        <input type="text" id="discord_id" name="discord_id" required placeholder="z.B. 123456789012345678">
+    </div>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
 </form>
 {% endblock %}

@@ -1,50 +1,45 @@
-{% extends "base.html" %}
-{% block title %}Team — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}News — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Team — {{ guild.name }}</h1>
+<h1>News verwalten</h1>
+<p style="color:#9297ab; font-size:13px;">Wird öffentlich unter <code>/news</code> angezeigt.</p>
 
-<h2 style="margin-top:24px;">Ränge (niedrig → hoch)</h2>
-{% if not ranks %}
-<p style="color:#9297ab;">Noch keine Team-Ränge eingerichtet.</p>
-{% else %}
-{% for r in ranks %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span>Position {{ r.position }} — Rollen-ID {{ r.role_id }}</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/team/raenge/{{ r.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+<div class="admin-card">
+    <h2 style="margin-bottom:12px;">Neuer Beitrag</h2>
+    <form method="post" action="/admin/news" class="admin-form">
+        <div>
+            <label for="title">Titel</label>
+            <input type="text" id="title" name="title" required>
+        </div>
+        <div>
+            <label for="content">Inhalt</label>
+            <textarea id="content" name="content" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-small">Veröffentlichen</button>
     </form>
 </div>
-{% endfor %}
-{% endif %}
 
-<form method="post" action="/dashboard/{{ guild.id }}/team/raenge" class="settings-form" style="margin-top:20px;">
-    <div class="field">
-        <label for="role_id">Neuer Rang (wird am Ende der Hierarchie eingefügt)</label>
-        <select name="role_id" id="role_id">
-            {% for role in roles %}
-            <option value="{{ role.id }}">{{ role.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Rang hinzufügen</button>
-</form>
-
-<h2 style="margin-top:40px;">Mitglieder ({{ members|length }})</h2>
-{% if not members %}
-<p style="color:#9297ab;">Das Team ist aktuell leer.</p>
-{% else %}
+{% for post in posts %}
 <div class="admin-card">
-    {% for m in members %}
-    <div style="padding:8px 0; border-bottom:1px solid #262838;">
-        Discord-ID {{ m.user_id }} —
-        {% if m.current_rank_id and m.current_rank_id in ranks_by_id %}
-        Rang-Position {{ ranks_by_id[m.current_rank_id].position }}
-        {% else %}
-        kein Rang zugewiesen
-        {% endif %}
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+            <strong>{{ post.title }}</strong>
+            <span style="color:#9297ab; font-size:12px;"> — {{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+            <p style="margin-top:8px;">{{ post.content }}</p>
+        </div>
     </div>
-    {% endfor %}
+    <div style="display:flex; gap:10px; margin-top:10px;">
+        <form method="post" action="/admin/news/{{ post.id }}/toggle">
+            <input type="hidden" name="published" value="{{ '' if post.published else 'on' }}">
+            <button type="submit" class="btn btn-small btn-ghost">{{ "Verbergen" if post.published else "Veröffentlichen" }}</button>
+        </form>
+        <form method="post" action="/admin/news/{{ post.id }}/delete"
+              onsubmit="return confirm('Diesen Beitrag wirklich löschen?');">
+            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
+        </form>
+    </div>
 </div>
-{% endif %}
+{% else %}
+<p style="color:#9297ab;">Noch keine News-Beiträge.</p>
+{% endfor %}
 {% endblock %}

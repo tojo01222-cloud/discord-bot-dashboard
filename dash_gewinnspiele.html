@@ -1,18 +1,13 @@
-{% extends "base.html" %}
-{% block title %}Reaction-Roles — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}System — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Reaction-Roles — {{ guild.name }}</h1>
-<p style="font-size:13px;">Neue Reaction-Roles werden über <code>/reactionrole add</code> in Discord eingerichtet (dafür wird die Ziel-Nachricht gebraucht) — hier kannst du bestehende einsehen und entfernen.</p>
-
-{% for e in entries %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span>{{ e.emoji }} → Rollen-ID {{ e.role_id }} (Nachricht {{ e.message_id }})</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/reactionroles/{{ e.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
+<h1>System-Info</h1>
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Python-Version</th><td>{{ system_info.python_version }}</td></tr>
+        <tr><th>Plattform</th><td>{{ system_info.platform }}</td></tr>
+        <tr><th>Datenbank</th><td>{{ "Erreichbar" if system_info.database_ok else "Nicht erreichbar" }}</td></tr>
+        <tr><th>Wartungsmodus</th><td>{{ "Aktiv" if system_info.maintenance_mode else "Inaktiv" }}</td></tr>
+    </table>
 </div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Reaction-Roles eingerichtet.</p>
-{% endfor %}
 {% endblock %}

@@ -1,17 +1,54 @@
-{% extends "admin_base.html" %}
-{% block title %}Ankündigungen — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Ticket-Arten — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Globale Ankündigung</h1>
-<p style="color:#9297ab; font-size:14px;">
-    Wird an den eingerichteten Ankündigungs-Kanal auf allen {{ guild_count }} Servern gesendet
-    (nur Server, wo im Server-Dashboard ein Ankündigungs-Kanal ausgewählt wurde).
-</p>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Ticket-Arten — {{ guild.name }}</h1>
+<p style="font-size:13px;">Diese Arten erscheinen im Auswahlmenü des Ticket-Panels. <a href="/dashboard/{{ guild.id }}/tickets/panel-senden">→ Panel senden</a></p>
 
-<form method="post" action="/admin/broadcast" class="admin-form">
-    <div>
-        <label for="message">Nachricht</label>
-        <textarea id="message" name="message" required placeholder="Deine Ankündigung..."></textarea>
+{% for entry in categories %}
+<div style="padding:14px 0; border-bottom:1px solid #262838;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span>{{ entry.category.emoji }} <strong>{{ entry.category.name }}</strong>
+            {% if entry.category.max_concurrent %}
+            — Auslastung: {{ entry.open_count }}/{{ entry.category.max_concurrent }}
+            {% endif %}
+            {% if entry.category.ping_role_id %}
+            — Ping: Rollen-ID {{ entry.category.ping_role_id }}
+            {% endif %}
+        </span>
+        <form method="post" action="/dashboard/{{ guild.id }}/tickets/kategorien/{{ entry.category.id }}/loeschen">
+            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+        </form>
     </div>
-    <button type="submit" class="btn">An alle Server senden</button>
+    {% if entry.category.description %}<p style="margin:6px 0 0;">{{ entry.category.description }}</p>{% endif %}
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Ticket-Arten eingerichtet.</p>
+{% endfor %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/tickets/kategorien" class="settings-form" style="margin-top:24px;">
+    <div class="field"><label>Name</label><input type="text" name="name" required></div>
+    <div class="field"><label>Emoji</label><input type="text" name="emoji" value="🎫"></div>
+    <div class="field"><label>Beschreibung</label><input type="text" name="description"></div>
+    <div class="field">
+        <label>Eigene Kanal-Kategorie (optional)</label>
+        <select name="channel_category_id">
+            <option value="0">— Standard-Kategorie nutzen —</option>
+            {% for cat in discord_categories %}
+            <option value="{{ cat.id }}">{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field"><label>Maximal gleichzeitig offen (0 = unbegrenzt)</label><input type="number" name="max_concurrent" min="0" value="0"></div>
+    <div class="field">
+        <label>Ping-Rolle bei neuem Ticket (optional)</label>
+        <select name="ping_role_id">
+            <option value="0">— keine —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}">{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-small">Ticket-Art hinzufügen</button>
 </form>
 {% endblock %}

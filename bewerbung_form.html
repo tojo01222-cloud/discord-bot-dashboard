@@ -1,27 +1,165 @@
 {% extends "base.html" %}
-{% block title %}Geburtstage — {{ guild.name }}{% endblock %}
+{% block title %}Einstellungen — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Geburtstage — {{ guild.name }}</h1>
+<a href="/servers" class="back-link">← Zurück zur Serverliste</a>
+<h1>Einstellungen — {{ guild.name }}</h1>
 
-<form method="post" action="/dashboard/{{ guild.id }}/geburtstage/kanal" class="settings-form">
+<form method="post" action="/dashboard/{{ guild.id }}/settings" class="settings-form">
+
+    <span class="section-badge badge-setup">Grundeinstellungen</span>
     <div class="field">
-        <label>Gratulations-Kanal</label>
-        <select name="channel_id">
+        <label for="language">🌐 Bot-Sprache</label>
+        <select name="language" id="language">
+            <option value="de" {% if settings.language == "de" %}selected{% endif %}>Deutsch</option>
+            <option value="en" {% if settings.language == "en" %}selected{% endif %}>English</option>
+            <option value="es" {% if settings.language == "es" %}selected{% endif %}>Español</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="mod_log_channel_id">Moderations-Log-Kanal</label>
+        <select name="mod_log_channel_id" id="mod_log_channel_id">
             <option value="0">— kein Kanal ausgewählt —</option>
-            {% for ch in channels %}
-            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.mod_log_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
             {% endfor %}
         </select>
+    </div>
+    <div class="field">
+        <label for="punishment_log_channel_id">Strafverzeichnis-Kanal</label>
+        <select name="punishment_log_channel_id" id="punishment_log_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.punishment_log_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="announcement_channel_id">Ankündigungs-Kanal</label>
+        <select name="announcement_channel_id" id="announcement_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.announcement_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="ticket_category_id">🎫 Ticket-Kategorie (neue Ticket-Kanäle entstehen hier)</label>
+        <select name="ticket_category_id" id="ticket_category_id">
+            <option value="0">— keine Kategorie ausgewählt —</option>
+            {% for cat in categories %}
+            <option value="{{ cat.id }}" {% if settings.ticket_category_id == cat.id|int %}selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="waiting_room_voice_channel_id">🙋 Warteraum — Sprachkanal</label>
+        <select name="waiting_room_voice_channel_id" id="waiting_room_voice_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for vc in voice_channels %}
+            <option value="{{ vc.id }}" {% if settings.waiting_room_voice_channel_id == vc.id|int %}selected{% endif %}>{{ vc.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="waiting_room_notify_channel_id">Warteraum — Melde-Textkanal</label>
+        <select name="waiting_room_notify_channel_id" id="waiting_room_notify_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.waiting_room_notify_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <span class="section-badge badge-music">Musik</span>
+    <div class="field">
+        <label for="music_bound_voice_channel_id">🎵 Dauerhafter Sprachkanal</label>
+        <select name="music_bound_voice_channel_id" id="music_bound_voice_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for vc in voice_channels %}
+            <option value="{{ vc.id }}" {% if settings.music_bound_voice_channel_id == vc.id|int %}selected{% endif %}>{{ vc.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <span class="section-badge badge-setup">🤖 Autorole (3 unabhängige Ziele)</span>
+    <div class="field">
+        <label for="autorole_id">Für alle (menschlichen) neuen Mitglieder</label>
+        <select name="autorole_id" id="autorole_id">
+            <option value="0">— keine Rolle ausgewählt —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}" {% if settings.autorole_id == role.id|int %}selected{% endif %}>{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="autorole_bot_id">Für neue Bots/Apps</label>
+        <select name="autorole_bot_id" id="autorole_bot_id">
+            <option value="0">— keine Rolle ausgewählt —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}" {% if settings.autorole_bot_id == role.id|int %}selected{% endif %}>{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="autorole_admin_id">Automatisch für Administratoren (auch nachträglich synchronisiert)</label>
+        <select name="autorole_admin_id" id="autorole_admin_id">
+            <option value="0">— keine Rolle ausgewählt —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}" {% if settings.autorole_admin_id == role.id|int %}selected{% endif %}>{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <span class="section-badge badge-security">🛡️ Sicherheit</span>
+    <div class="field">
+        <label><input type="checkbox" name="anti_nuke_enabled" value="on" {% if settings.anti_nuke_enabled %}checked{% endif %}> Anti-Nuke aktiv</label>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" name="anti_spam_enabled" value="on" {% if settings.anti_spam_enabled %}checked{% endif %}> Anti-Spam aktiv</label>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" name="anti_hack_enabled" value="on" {% if settings.anti_hack_enabled %}checked{% endif %}> Anti-Hack aktiv</label>
+        <span style="font-size:12px; color:#9297ab;">Erkennt vermutlich gekaperte Accounts (kanalübergreifender Spam mit Anhang/Link)</span>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" name="anti_werbung_enabled" value="on" {% if settings.anti_werbung_enabled %}checked{% endif %}> Anti-Werbung aktiv</label>
+        <span style="font-size:12px; color:#9297ab;">Löscht unautorisierte Links automatisch, eskalierende Strafen ab dem 2. Verstoß</span>
+    </div>
+
+    <button type="submit" class="btn">💾 Speichern</button>
+</form>
+
+<h2 style="margin-top:32px;">🙋 Warteraum — eigene Meldungs-Nachricht</h2>
+<p style="font-size:13px;">Leer lassen für den Standardtext. Platzhalter: <code>{user}</code>, <code>{channel}</code>.</p>
+<form method="post" action="/dashboard/{{ guild.id }}/warteraum-nachricht" class="settings-form">
+    <div class="field">
+        <input type="text" name="message" placeholder="z.B. {user} braucht Hilfe im Warteraum {channel}!"
+               value="{{ settings.waiting_room_message }}">
     </div>
     <button type="submit" class="btn btn-small">Speichern</button>
 </form>
 
-<h2 style="margin-top:32px;">Hinterlegte Geburtstage ({{ birthdays|length }})</h2>
-<p style="font-size:13px;">User hinterlegen ihren eigenen Geburtstag über <code>/geburtstag setzen</code> in Discord.</p>
-{% for b in birthdays %}
-<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ b.day }}.{{ b.month }} — Discord-ID {{ b.user_id }}</div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Geburtstage hinterlegt.</p>
-{% endfor %}
+<h2 style="margin-top:40px;">Weitere Bereiche</h2>
+<div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;">
+    <a href="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="btn btn-small btn-pink">📝 Bewerbungssystem</a>
+    <a href="/dashboard/{{ guild.id }}/bewerbungen" class="btn btn-small btn-ghost">📋 Bewerbungen ansehen</a>
+    <a href="/dashboard/{{ guild.id }}/team" class="btn btn-small btn-ghost">👥 Team</a>
+    <a href="/dashboard/{{ guild.id }}/levelrollen" class="btn btn-small btn-ghost">🎖️ Level-Rollen</a>
+    <a href="/dashboard/{{ guild.id }}/leaderboard" class="btn btn-small btn-green">📈 Leaderboard</a>
+    <a href="/dashboard/{{ guild.id }}/gewinnspiele" class="btn btn-small btn-green">🎉 Gewinnspiele</a>
+    <a href="/dashboard/{{ guild.id }}/vertrauensliste" class="btn btn-small btn-ghost">🛡️ Anti-Nuke-Whitelist</a>
+    <a href="/dashboard/{{ guild.id }}/antihack-ausnahmen" class="btn btn-small btn-ghost">🕵️ Anti-Hack-Ausnahmen</a>
+    <a href="/dashboard/{{ guild.id }}/antiwerbung-ausnahmen" class="btn btn-small btn-ghost">🔗 Anti-Werbung-Ausnahmen</a>
+    <a href="/dashboard/{{ guild.id }}/strafen" class="btn btn-small btn-ghost">⚠️ Strafverzeichnis</a>
+    <a href="/dashboard/{{ guild.id }}/moderation" class="btn btn-small btn-ghost">🔨 Moderation</a>
+    <a href="/dashboard/{{ guild.id }}/ankuendigung" class="btn btn-small btn-ghost">📢 Ankündigung senden</a>
+    <a href="/dashboard/{{ guild.id }}/tickets" class="btn btn-small btn-ghost">🎫 Tickets</a>
+    <a href="/dashboard/{{ guild.id }}/tickets/kategorien" class="btn btn-small btn-pink">🗂️ Ticket-Arten</a>
+    <a href="/dashboard/{{ guild.id }}/tickets/panel-senden" class="btn btn-small btn-pink">📨 Panel senden</a>
+    <a href="/dashboard/{{ guild.id }}/werbung" class="btn btn-small btn-pink">📢 Werbung & Partner</a>
+    <a href="/dashboard/{{ guild.id }}/reactionroles" class="btn btn-small btn-ghost">🎭 Reaction-Roles</a>
+    <a href="/dashboard/{{ guild.id }}/vorschlaege" class="btn btn-small btn-ghost">💡 Vorschläge</a>
+    <a href="/dashboard/{{ guild.id }}/geburtstage" class="btn btn-small btn-ghost">🎂 Geburtstage</a>
+    <a href="/dashboard/{{ guild.id }}/economy" class="btn btn-small btn-green">💰 Economy</a>
+</div>
 {% endblock %}

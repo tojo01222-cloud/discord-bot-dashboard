@@ -1,45 +1,37 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin-Panel{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <div class="admin-layout">
-        <nav class="admin-sidebar">
-            <div class="admin-brand">🛡️ Admin-Panel</div>
-            <a href="/admin">📊 Übersicht</a>
-            <a href="/admin/stats">📈 Statistiken</a>
-            <a href="/admin/servers">🌐 Server</a>
-            <a href="/admin/broadcast">📢 Ankündigungen</a>
-            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
-            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
-            <a href="/admin/users">👥 Dashboard-User</a>
-            {% if admin and admin.is_superadmin %}
-            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
-            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
-            {% endif %}
-            <a href="/admin/system">💻 System</a>
-            <a href="/admin/news">📰 News</a>
-            <a href="/admin/account">👤 Mein Account</a>
-            <div class="admin-sidebar-footer">
-                <span>{{ admin.username if admin }}</span>
-                {% if operator_invite %}
-                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
-                {% endif %}
-                <a href="/admin/logout">Logout</a>
-                <span style="font-size:11px; opacity:0.7;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}</span>
-            </div>
-        </nav>
-        <main class="admin-content">
-            {% for message in messages %}
-            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+{% extends "base.html" %}
+{% block title %}Werbung — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Werbung & Partner — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/werbung/kanal" class="settings-form">
+    <div class="field">
+        <label>Werbe-Kanal</label>
+        <select name="channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
             {% endfor %}
-            {% block content %}{% endblock %}
-        </main>
+        </select>
     </div>
-</body>
-</html>
+    <button type="submit" class="btn btn-small">Speichern</button>
+</form>
+
+<h2 style="margin-top:32px;">Partner ({{ partners|length }})</h2>
+{% for p in partners %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
+    <span><strong>{{ p.name }}</strong> — <a href="{{ p.invite_link }}" target="_blank">{{ p.invite_link }}</a></span>
+    <form method="post" action="/dashboard/{{ guild.id }}/werbung/partner/{{ p.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Partner eingetragen.</p>
+{% endfor %}
+
+<form method="post" action="/dashboard/{{ guild.id }}/werbung/partner" class="settings-form" style="margin-top:20px;">
+    <div class="field"><label>Name</label><input type="text" name="name" required></div>
+    <div class="field"><label>Einladungslink</label><input type="text" name="invite_link" required></div>
+    <button type="submit" class="btn btn-small">Partner hinzufügen</button>
+</form>
+{% endblock %}
