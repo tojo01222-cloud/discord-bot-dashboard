@@ -1,27 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Geburtstage — {{ guild.name }}{% endblock %}
+{% block title %}Bewerbung{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Geburtstage — {{ guild.name }}</h1>
+<div class="login-box" style="max-width:560px;">
+    <h1>{{ config.welcome_text }}</h1>
 
-<form method="post" action="/dashboard/{{ guild.id }}/geburtstage/kanal" class="settings-form">
-    <div class="field">
-        <label>Gratulations-Kanal</label>
-        <select name="channel_id">
-            <option value="0">— kein Kanal ausgewählt —</option>
-            {% for ch in channels %}
-            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+    {% if closed %}
+    <p style="color:#9297ab;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
+    {% elif already_applied %}
+    <div class="flash flash-success">Du hast bereits eine offene Bewerbung eingereicht — wir melden uns bei dir!</div>
+    {% else %}
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+        {% endfor %}
+
+        {% if not questions %}
+        <p style="color:#9297ab;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
+        {% else %}
+        <form method="post" action="/bewerbung/{{ guild_id }}" class="settings-form" style="text-align:left;">
+            {% for q in questions %}
+            <div class="field">
+                <label for="question_{{ q.id }}">{{ q.question_text }}</label>
+                <textarea id="question_{{ q.id }}" name="question_{{ q.id }}" required rows="3"
+                          style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
+            </div>
             {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Speichern</button>
-</form>
-
-<h2 style="margin-top:32px;">Hinterlegte Geburtstage ({{ birthdays|length }})</h2>
-<p style="font-size:13px;">User hinterlegen ihren eigenen Geburtstag über <code>/geburtstag setzen</code> in Discord.</p>
-{% for b in birthdays %}
-<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ b.day }}.{{ b.month }} — Discord-ID {{ b.user_id }}</div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Geburtstage hinterlegt.</p>
-{% endfor %}
+            <button type="submit" class="btn">Bewerbung abschicken</button>
+        </form>
+        {% endif %}
+    {% endif %}
+</div>
 {% endblock %}
