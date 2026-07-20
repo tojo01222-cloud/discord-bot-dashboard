@@ -119,6 +119,60 @@ WEB_TRANSLATIONS = {
 
         "lang_switch_label": "Sprache",
     },
+    "es": {
+        "nav_apply": "Postular",
+        "nav_news": "Noticias",
+        "nav_admin_panel": "Panel de Admin",
+        "nav_logout": "Cerrar sesión",
+        "footer_join_discord": "Únete a nuestro Discord",
+
+        "landing_title": "Tu Bot de Discord, totalmente bajo control",
+        "landing_subtitle": "Moderación, gestión de equipo, música, tickets, solicitudes y más — "
+                             "todo en un solo lugar, para cada servidor donde eres administrador.",
+        "landing_btn_dashboard": "Ir al Panel del Servidor",
+        "landing_btn_admin": "Ir al Área de Administración",
+
+        "feature1_title": "Moderación y Seguridad",
+        "feature1_desc": "Anti-Nuke, Anti-Spam, Anti-Hack, Anti-Publicidad, rangos de equipo y un "
+                          "registro de sanciones completo — todo configurable.",
+        "feature2_title": "Música y Radio",
+        "feature2_desc": "Reproducción de YouTube y emisoras de radio en vivo reales, siempre activas en tu canal de voz.",
+        "feature3_title": "Tickets y Sala de Espera",
+        "feature3_desc": "Paneles de soporte profesionales con varios diseños y detección automática de ayuda.",
+        "feature4_title": "Sistema de Solicitudes",
+        "feature4_desc": "Formularios de solicitud propios para tu equipo — los candidatos los completan aquí mismo.",
+        "feature5_title": "Nivel y Comunidad",
+        "feature5_desc": "Sistema de XP, seguimiento de invitaciones y sorteos — haz visible la actividad de tu servidor.",
+        "feature6_title": "Multilingüe y Autorol",
+        "feature6_desc": "Alemán o inglés por servidor, asignación automática de roles para miembros, bots y administradores por separado.",
+
+        "apply_title": "Postúlate a nuestro Equipo",
+        "apply_subtitle": "¿Quieres ayudar? Puedes postularte a nuestro equipo directamente en nuestro "
+                           "servidor de Discord — nuestro equipo revisa cada solicitud personalmente.",
+        "apply_btn": "Únete a Discord y Postula",
+        "apply_step1_title": "Únete a Discord",
+        "apply_step1_desc": "Haz clic en el botón de arriba para unirte a nuestro servidor oficial de Discord.",
+        "apply_step2_title": "Encuentra la Solicitud",
+        "apply_step2_desc": "Busca nuestro canal de solicitudes o sistema de tickets, o revisa el panel "
+                             "del servidor para encontrar un formulario.",
+        "apply_step3_title": "Ser Revisado",
+        "apply_step3_desc": "Nuestro equipo revisa las solicitudes personalmente y se pondrá en contacto contigo.",
+
+        "news_title": "Noticias",
+        "news_empty": "Aún no hay noticias.",
+
+        "login_title": "Iniciar sesión",
+        "login_subtitle": "Inicia sesión con Discord para gestionar tus servidores.",
+        "login_btn": "Iniciar sesión con Discord",
+
+        "guilds_title": "Tus Servidores",
+        "guilds_subtitle": "Servidores donde tienes permisos de administrador:",
+        "guilds_manage_btn": "Gestionar",
+        "guilds_invite_btn": "Invitar Bot",
+        "guilds_empty": "No tienes nada que gestionar en ningún servidor que el bot conozca o donde seas administrador.",
+
+        "lang_switch_label": "Idioma",
+    },
 }
 
 
