@@ -1,22 +1,35 @@
-"""
-Ein Jinja2 "Context Processor": eine Funktion, die bei JEDEM Template-Rendern
-automatisch mit ausgeführt wird und ihre Rückgabewerte in den Kontext
-mischt. Damit müssen operator_username/operator_invite (für den
-"Discord beitreten"-Link im Footer, siehe base.html) nicht in jeder
-einzelnen Route manuell mitgegeben werden.
-"""
-from starlette.requests import Request
-import datetime as dt
+{% extends "base.html" %}
+{% block title %}{{ feature_label }}-Ausnahmen — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>{{ feature_label }}-Ausnahmen — {{ guild.name }}</h1>
+<p>User oder Rollen auf dieser Liste lösen die {{ feature_label }}-Erkennung nie aus (Server-Owner und Administratoren sind immer automatisch ausgenommen).</p>
 
-from dashboard.backend.config import dashboard_config as cfg
-from dashboard.backend.web_i18n import wt
+{% if not entries %}
+<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% else %}
+{% for e in entries %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>{{ "Rolle" if e.target_type == "role" else "User" }}-ID {{ e.target_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen/{{ e.target_type }}/{{ e.target_id }}/entfernen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% endfor %}
+{% endif %}
 
-
-def global_template_context(request: Request) -> dict:
-    return {
-        "operator_username": cfg.OPERATOR_DISCORD_USERNAME,
-        "operator_invite": cfg.OPERATOR_DISCORD_INVITE,
-        "site_lang": request.session.get("site_lang", "en"),
-        "wt": wt,
-        "current_year": dt.datetime.utcnow().year,
-    }
+<form method="post" action="/dashboard/{{ guild.id }}/{{ 'antihack' if feature_label == 'Anti-Hack' else 'antiwerbung' }}-ausnahmen" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="target_type">Typ</label>
+        <select name="target_type" id="target_type">
+            <option value="user">User</option>
+            <option value="role">Rolle</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="target_id">Discord-ID (User oder Rolle)</label>
+        <input type="text" id="target_id" name="target_id" required placeholder="z.B. 123456789012345678">
+    </div>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
+</form>
+{% endblock %}
