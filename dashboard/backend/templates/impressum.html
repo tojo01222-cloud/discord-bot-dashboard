@@ -1,41 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Impressum{% endblock %}
 {% block content %}
-<a href="/" class="back-link">← Zurück</a>
+<a href="/" class="back-link">Zurück</a>
 <h1>Impressum</h1>
 
-<p style="color:#8a90a2; font-size:13px;">
-    Hinweis: Dies ist kein Rechtsberatungs-Ersatz. Die Angaben unten orientieren sich an
-    §5 E-Commerce-Gesetz (ECG) und §25 Mediengesetz (Österreich). Ob und welche Pflichtangaben
-    im Detail nötig sind, hängt u.a. davon ab, ob der Betrieb dieses Bots als rein privates
-    Hobby-Projekt oder als geschäftsmäßiger Dienst einzustufen ist -- im Zweifel bei einer
-    Rechtsberatung (z.B. WKO-Gründerservice) absichern.
+<p style="color:#a3a3a3; font-size:13px;">
+    Kein Rechtsberatungs-Ersatz. Angaben orientiert an §5 ECG / §25 Mediengesetz (Österreich).
+    Vor öffentlichem Betrieb bei Bedarf rechtlich prüfen lassen.
 </p>
 
-<h2>Angaben gemäß §5 ECG / §25 Mediengesetz</h2>
-<p>
-    Diensteanbieter:<br>
-    {% if operator_username %}{{ operator_username }}{% else %}<em>[noch nicht hinterlegt]</em>{% endif %}
-</p>
+<h2>Diensteanbieter</h2>
+<p>{% if operator_username %}{{ operator_username }}{% else %}<em>[noch nicht hinterlegt]</em>{% endif %}</p>
 
 <h2>Kontakt</h2>
 <p>
-    Kontakt ausschließlich über den Support auf unserem Discord-Server:<br>
     {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" style="color:#7289f2;">{{ operator_invite }}</a>
+    <a href="{{ operator_invite }}" target="_blank" style="color:#ffffff; text-decoration:underline;">{{ operator_invite }}</a>
     {% else %}
     <em>[noch nicht hinterlegt]</em>
     {% endif %}
 </p>
-<p style="color:#8a90a2; font-size:13px;">
-    Es werden bewusst keine Postanschrift und keine E-Mail-Adresse veröffentlicht — der
-    Support läuft ausschließlich über das Ticket-System auf dem Discord-Server.
-</p>
 
 <h2>Haftungsausschluss</h2>
-<p style="font-size:14px; color:#c5c9d6;">
-    Für die Inhalte externer Links, auf die dieser Bot/dieses Dashboard verweist, wird keine
-    Haftung übernommen. Für den Inhalt verlinkter externer Seiten sind ausschließlich deren
-    Betreiber verantwortlich.
+<p style="font-size:14px; color:#a3a3a3;">
+    Für Inhalte externer, verlinkter Seiten wird keine Haftung übernommen — verantwortlich sind
+    ausschließlich deren Betreiber.
 </p>
 {% endblock %}

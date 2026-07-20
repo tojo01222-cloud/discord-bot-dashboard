@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Moderation — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
+<h1>Moderation — {{ guild.name }}</h1>
+<p style="color:#a3a3a3; font-size:13px;">
+    Hinweis: läuft direkt über die Discord-API, ohne die Rollen-Hierarchie-Prüfung der
+    /kick-/ban-Befehle in Discord. Der Zugriff hier ist über deine "Server verwalten"-Berechtigung
+    für genau diesen Server abgesichert.
+</p>
+
+<div class="settings-form">
+    <div>
+        <h2>Kick</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/kick" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Kicken</button>
+        </form>
+    </div>
+    <div>
+        <h2>Bann</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/ban" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Bannen</button>
+        </form>
+    </div>
+    <div>
+        <h2>Verwarnung</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/warn" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Verwarnen</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

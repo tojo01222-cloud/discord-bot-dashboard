@@ -15,7 +15,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from dashboard.backend.admin_auth import hash_password, verify_password
-from dashboard.backend.bot_api import send_channel_message, create_guild_invite
+from dashboard.backend.bot_api import send_channel_message, create_guild_invite, leave_guild
 from bot.utils.db_helpers import (
     get_admin_user_by_username,
     create_admin_user,
@@ -30,12 +30,28 @@ from bot.utils.db_helpers import (
     log_global_announcement,
     get_all_bot_guilds,
     get_or_create_guild_settings,
+    get_recent_announcements,
+    get_global_stats,
+    update_admin_password,
+    delete_admin_user,
+    create_permission_group,
+    get_permission_groups,
+    get_permission_group,
+    delete_permission_group,
+    get_group_permissions,
+    set_group_permissions,
+    assign_admin_to_group,
+    remove_admin_from_group,
+    get_admin_groups,
+    get_group_members,
+    get_effective_admin_permissions,
 )
 from bot.database.db import get_session
 from dashboard.backend.config import dashboard_config as cfg
 
 admin_router = APIRouter()
-templates = Jinja2Templates(directory="dashboard/backend/templates")
+from dashboard.backend.template_context import global_template_context
+templates = Jinja2Templates(directory="dashboard/backend/templates", context_processors=[global_template_context])
 
 ALL_PERMISSIONS = ["servers.view", "broadcast.send", "bot.control", "users.view", "permissions.manage"]
 
@@ -57,7 +73,7 @@ async def _require_permission(request: Request, permission_key: str):
         return RedirectResponse("/admin/login")
     if admin.get("is_superadmin"):
         return None
-    perms = await get_admin_permissions(admin["id"])
+    perms = await get_effective_admin_permissions(admin["id"])  # individuell + alle Gruppen
     if permission_key not in perms:
         return RedirectResponse("/admin?error=no_permission")
     return None
@@ -117,14 +133,22 @@ async def admin_home(request: Request):
 
 
 @admin_router.get("/admin/servers", response_class=HTMLResponse)
-async def admin_servers(request: Request):
+async def admin_servers(request: Request, q: str = "", sort: str = "name"):
     denied = await _require_permission(request, "servers.view")
     if denied:
         return denied
     admin = _current_admin(request)
     guilds = await get_all_bot_guilds()
+
+    if q:
+        guilds = [g for g in guilds if q.lower() in g.name.lower()]
+    if sort == "members":
+        guilds = sorted(guilds, key=lambda g: g.member_count, reverse=True)
+    else:
+        guilds = sorted(guilds, key=lambda g: g.name.lower())
+
     return templates.TemplateResponse(request, "admin_servers.html", {
-        "user": None, "messages": [], "admin": admin, "guilds": guilds,
+        "user": None, "messages": [], "admin": admin, "guilds": guilds, "q": q, "sort": sort,
     })
 
 
@@ -211,7 +235,7 @@ async def admin_bot_control_submit(request: Request, enable: str = Form(""), rea
 
 
 @admin_router.get("/admin/users", response_class=HTMLResponse)
-async def admin_users_page(request: Request):
+async def admin_users_page(request: Request, q: str = ""):
     denied = await _require_permission(request, "users.view")
     if denied:
         return denied
@@ -223,8 +247,11 @@ async def admin_users_page(request: Request):
         result = await session.execute(select(DashboardUser).order_by(DashboardUser.last_login_at.desc()))
         dashboard_users = list(result.scalars().all())
 
+    if q:
+        dashboard_users = [u for u in dashboard_users if q.lower() in u.username.lower()]
+
     return templates.TemplateResponse(request, "admin_users.html", {
-        "user": None, "messages": [], "admin": admin, "dashboard_users": dashboard_users,
+        "user": None, "messages": [], "admin": admin, "dashboard_users": dashboard_users, "q": q,
     })
 
 
@@ -240,7 +267,8 @@ async def admin_permissions_page(request: Request):
     admins_with_perms = []
     for a in admins:
         perms = await get_admin_permissions(a.id) if not a.is_superadmin else set(ALL_PERMISSIONS)
-        admins_with_perms.append({"user": a, "permissions": perms})
+        groups = await get_admin_groups(a.id) if not a.is_superadmin else []
+        admins_with_perms.append({"user": a, "permissions": perms, "groups": groups})
 
     return templates.TemplateResponse(request, "admin_permissions.html", {
         "user": None, "messages": [], "admin": admin,
@@ -284,3 +312,204 @@ async def impressum(request: Request):
         "operator_username": cfg.OPERATOR_DISCORD_USERNAME,
         "operator_invite": cfg.OPERATOR_DISCORD_INVITE,
     })
+
+
+@admin_router.get("/admin/stats", response_class=HTMLResponse)
+async def admin_stats_page(request: Request):
+    denied = await _require_admin(request)
+    if denied:
+        return denied
+    admin = _current_admin(request)
+    stats = await get_global_stats()
+    return templates.TemplateResponse(request, "admin_stats.html", {
+        "user": None, "messages": [], "admin": admin, "stats": stats,
+    })
+
+
+@admin_router.get("/admin/announcements", response_class=HTMLResponse)
+async def admin_announcements_page(request: Request):
+    denied = await _require_permission(request, "broadcast.send")
+    if denied:
+        return denied
+    admin = _current_admin(request)
+    announcements = await get_recent_announcements()
+    return templates.TemplateResponse(request, "admin_announcements.html", {
+        "user": None, "messages": [], "admin": admin, "announcements": announcements,
+    })
+
+
+@admin_router.post("/admin/servers/{guild_id}/leave")
+async def admin_leave_server(request: Request, guild_id: int):
+    denied = await _require_permission(request, "servers.view")
+    if denied:
+        return denied
+    admin = _current_admin(request)
+    guilds = await get_all_bot_guilds()
+    ok = await leave_guild(guild_id)
+    remaining = [g for g in guilds if g.guild_id != guild_id] if ok else guilds
+    return templates.TemplateResponse(request, "admin_servers.html", {
+        "user": None, "admin": admin, "guilds": remaining,
+        "messages": [{"type": "success" if ok else "error",
+                      "text": "Server verlassen." if ok else "Konnte den Server nicht verlassen."}],
+    })
+
+
+@admin_router.get("/admin/account", response_class=HTMLResponse)
+async def admin_account_page(request: Request):
+    denied = await _require_admin(request)
+    if denied:
+        return denied
+    admin = _current_admin(request)
+    return templates.TemplateResponse(request, "admin_account.html", {
+        "user": None, "messages": [], "admin": admin,
+    })
+
+
+@admin_router.post("/admin/account")
+async def admin_account_update(request: Request, new_password: str = Form(...),
+                                new_password_repeat: str = Form(...)):
+    denied = await _require_admin(request)
+    if denied:
+        return denied
+    admin = _current_admin(request)
+
+    if len(new_password) < 8:
+        return templates.TemplateResponse(request, "admin_account.html", {
+            "user": None, "admin": admin,
+            "messages": [{"type": "error", "text": "Das Passwort muss mindestens 8 Zeichen lang sein."}],
+        })
+    if new_password != new_password_repeat:
+        return templates.TemplateResponse(request, "admin_account.html", {
+            "user": None, "admin": admin,
+            "messages": [{"type": "error", "text": "Die Passwörter stimmen nicht überein."}],
+        })
+
+    await update_admin_password(admin["id"], hash_password(new_password))
+    return templates.TemplateResponse(request, "admin_account.html", {
+        "user": None, "admin": admin,
+        "messages": [{"type": "success", "text": "Passwort geändert."}],
+    })
+
+
+@admin_router.post("/admin/permissions/{admin_id}/delete")
+async def admin_delete(request: Request, admin_id: int):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin/login")
+    await delete_admin_user(admin_id)
+    return RedirectResponse("/admin/permissions", status_code=303)
+
+
+@admin_router.get("/admin/system", response_class=HTMLResponse)
+async def admin_system_page(request: Request):
+    denied = await _require_admin(request)
+    if denied:
+        return denied
+    admin = _current_admin(request)
+
+    import sys
+    import platform
+    state = await get_bot_control_state()
+
+    db_ok = True
+    try:
+        await get_all_bot_guilds()
+    except Exception:
+        db_ok = False
+
+    system_info = {
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "database_ok": db_ok,
+        "maintenance_mode": state.maintenance_mode,
+    }
+    return templates.TemplateResponse(request, "admin_system.html", {
+        "user": None, "messages": [], "admin": admin, "system_info": system_info,
+    })
+
+
+@admin_router.get("/admin/groups", response_class=HTMLResponse)
+async def admin_groups_page(request: Request):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    groups = await get_permission_groups()
+    groups_with_perms = []
+    for g in groups:
+        perms = await get_group_permissions(g.id)
+        members = await get_group_members(g.id)
+        groups_with_perms.append({"group": g, "permissions": perms, "member_count": len(members)})
+    return templates.TemplateResponse(request, "admin_groups.html", {
+        "user": None, "messages": [], "admin": admin,
+        "groups_with_perms": groups_with_perms, "all_permissions": ALL_PERMISSIONS,
+    })
+
+
+@admin_router.post("/admin/groups")
+async def admin_groups_create(request: Request, name: str = Form(...)):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    if name.strip():
+        await create_permission_group(name.strip(), admin["id"])
+    return RedirectResponse("/admin/groups", status_code=303)
+
+
+@admin_router.get("/admin/groups/{group_id}", response_class=HTMLResponse)
+async def admin_group_detail(request: Request, group_id: int):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+
+    group = await get_permission_group(group_id)
+    if not group:
+        return RedirectResponse("/admin/groups")
+
+    permissions = await get_group_permissions(group_id)
+    members = await get_group_members(group_id)
+    all_admins = await list_admin_users()
+    non_members = [a for a in all_admins if a.id not in {m.id for m in members} and not a.is_superadmin]
+
+    return templates.TemplateResponse(request, "admin_group_detail.html", {
+        "user": None, "messages": [], "admin": admin, "group": group,
+        "permissions": permissions, "members": members, "non_members": non_members,
+        "all_permissions": ALL_PERMISSIONS,
+    })
+
+
+@admin_router.post("/admin/groups/{group_id}/permissions")
+async def admin_group_set_permissions(request: Request, group_id: int):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    form = await request.form()
+    selected = [key for key in ALL_PERMISSIONS if form.get(f"perm_{key}") == "on"]
+    await set_group_permissions(group_id, selected)
+    return RedirectResponse(f"/admin/groups/{group_id}", status_code=303)
+
+
+@admin_router.post("/admin/groups/{group_id}/members/add")
+async def admin_group_add_member(request: Request, group_id: int, admin_id: int = Form(...)):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    await assign_admin_to_group(admin_id, group_id)
+    return RedirectResponse(f"/admin/groups/{group_id}", status_code=303)
+
+
+@admin_router.post("/admin/groups/{group_id}/members/{admin_id}/remove")
+async def admin_group_remove_member(request: Request, group_id: int, admin_id: int):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    await remove_admin_from_group(admin_id, group_id)
+    return RedirectResponse(f"/admin/groups/{group_id}", status_code=303)
+
+
+@admin_router.post("/admin/groups/{group_id}/delete")
+async def admin_group_delete(request: Request, group_id: int):
+    admin = _current_admin(request)
+    if not admin or not admin.get("is_superadmin"):
+        return RedirectResponse("/admin?error=no_permission")
+    await delete_permission_group(group_id)
+    return RedirectResponse("/admin/groups", status_code=303)

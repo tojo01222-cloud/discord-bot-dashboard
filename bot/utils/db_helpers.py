@@ -14,6 +14,8 @@ from bot.database.models import (
     GuildSettings, Punishment, TeamRank, TeamMember, TrustedUser, DashboardUser, BotGuild, Ticket,
     AdminUser, AdminPermission, GlobalAnnouncement, BotControlState,
     ApplicationConfig, ApplicationQuestion, Application, ApplicationAnswer,
+    LevelXP, LevelRoleReward, InviteRecord, InviteJoin, Giveaway, GiveawayEntry,
+    PermissionGroup, PermissionGroupEntry, AdminUserGroup, ApplicationNotifyChannel,
 )
 
 
@@ -63,6 +65,17 @@ async def get_user_punishments(guild_id: int, user_id: int, active_only: bool = 
         if active_only:
             stmt = stmt.where(Punishment.active == True)  # noqa: E712
         stmt = stmt.order_by(Punishment.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_guild_punishments(guild_id: int, active_only: bool = True, limit: int = 100) -> list[Punishment]:
+    """Alle Strafen eines Servers (nicht nur eines Users) -- fürs Dashboard."""
+    async with get_session() as session:
+        stmt = select(Punishment).where(Punishment.guild_id == guild_id)
+        if active_only:
+            stmt = stmt.where(Punishment.active == True)  # noqa: E712
+        stmt = stmt.order_by(Punishment.created_at.desc()).limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -134,25 +147,36 @@ async def remove_team_member(guild_id: int, user_id: int) -> bool:
 # Datenbank-Anfragen pro Tag bedeuten und (v.a. bei Neon mit begrenzten
 # gleichzeitigen Verbindungen) auch andere Befehle ausbremsen.
 # Daher: ein einfacher In-Memory-Cache pro Server, der bei jeder Änderung
-# (Toggle, Trust/Untrust) sofort mit aktualisiert wird -- er wird also nie
-# "veraltet" ausgeliefert, nur beim allerersten Zugriff pro Server einmal
-# aus der Datenbank geladen.
-_security_cache: dict[int, dict] = {}
+# (Toggle, Trust/Untrust) INNERHALB DESSELBEN PROZESSES sofort mit aktualisiert
+# wird. WICHTIG: Bot und Dashboard laufen als komplett getrennte Prozesse
+# (unterschiedliche Server!) ohne gemeinsamen Arbeitsspeicher -- eine Änderung
+# über das Dashboard (z.B. der neue Anti-Nuke/-Spam-Schalter in den
+# Server-Einstellungen) kann den Cache im BOT-Prozess nicht direkt
+# invalidieren. Deshalb zusätzlich ein TTL von 60s, damit solche
+# prozessübergreifenden Änderungen spätestens nach einer Minute ankommen,
+# statt bis zum nächsten Bot-Neustart veraltet zu bleiben.
+_security_cache: dict[int, tuple[float, dict]] = {}
+_SECURITY_CACHE_TTL_SECONDS = 60
 
 
 async def _get_or_load_security_cache(guild_id: int) -> dict:
-    if guild_id not in _security_cache:
-        async with get_session() as session:
-            settings = await get_or_create_guild_settings(session, guild_id)
-            stmt = select(TrustedUser.user_id).where(TrustedUser.guild_id == guild_id)
-            result = await session.execute(stmt)
-            trusted_ids = set(result.scalars().all())
-        _security_cache[guild_id] = {
-            "anti_nuke": settings.anti_nuke_enabled,
-            "anti_spam": settings.anti_spam_enabled,
-            "trusted_ids": trusted_ids,
-        }
-    return _security_cache[guild_id]
+    now = dt.datetime.utcnow().timestamp()
+    cached = _security_cache.get(guild_id)
+    if cached and now - cached[0] < _SECURITY_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    async with get_session() as session:
+        settings = await get_or_create_guild_settings(session, guild_id)
+        stmt = select(TrustedUser.user_id).where(TrustedUser.guild_id == guild_id)
+        result = await session.execute(stmt)
+        trusted_ids = set(result.scalars().all())
+    data = {
+        "anti_nuke": settings.anti_nuke_enabled,
+        "anti_spam": settings.anti_spam_enabled,
+        "trusted_ids": trusted_ids,
+    }
+    _security_cache[guild_id] = (now, data)
+    return data
 
 
 async def is_trusted_user(guild_id: int, user_id: int) -> bool:
@@ -166,7 +190,8 @@ async def add_trusted_user(guild_id: int, user_id: int, added_by: int) -> bool:
     async with get_session() as session:
         session.add(TrustedUser(guild_id=guild_id, user_id=user_id, added_by=added_by))
         await session.commit()
-    _security_cache[guild_id]["trusted_ids"].add(user_id)
+    if guild_id in _security_cache:
+        _security_cache[guild_id][1]["trusted_ids"].add(user_id)
     return True
 
 
@@ -179,7 +204,8 @@ async def remove_trusted_user(guild_id: int, user_id: int) -> bool:
             return False
         await session.delete(entry)
         await session.commit()
-    _security_cache.get(guild_id, {}).get("trusted_ids", set()).discard(user_id)
+    if guild_id in _security_cache:
+        _security_cache[guild_id][1]["trusted_ids"].discard(user_id)
     return True
 
 
@@ -281,7 +307,10 @@ async def get_bot_guild_ids() -> set[int]:
 
 async def save_guild_settings_from_dashboard(
     guild_id: int, language: str, mod_log_channel_id: int, punishment_log_channel_id: int,
-    announcement_channel_id: int,
+    announcement_channel_id: int, ticket_category_id: int = 0,
+    waiting_room_voice_channel_id: int = 0, waiting_room_notify_channel_id: int = 0,
+    autorole_id: int = 0, anti_nuke_enabled: bool = True, anti_spam_enabled: bool = True,
+    music_bound_voice_channel_id: int = 0,
 ) -> None:
     async with get_session() as session:
         settings = await get_or_create_guild_settings(session, guild_id)
@@ -289,7 +318,20 @@ async def save_guild_settings_from_dashboard(
         settings.mod_log_channel_id = mod_log_channel_id
         settings.punishment_log_channel_id = punishment_log_channel_id
         settings.announcement_channel_id = announcement_channel_id
+        settings.ticket_category_id = ticket_category_id
+        settings.waiting_room_voice_channel_id = waiting_room_voice_channel_id
+        settings.waiting_room_notify_channel_id = waiting_room_notify_channel_id
+        settings.autorole_id = autorole_id
+        settings.anti_nuke_enabled = anti_nuke_enabled
+        settings.anti_spam_enabled = anti_spam_enabled
+        settings.music_bound_voice_channel_id = music_bound_voice_channel_id
         await session.commit()
+    # Hinweis: Dashboard und Bot sind getrennte Prozesse ohne gemeinsamen
+    # Speicher -- dieses .pop() wirkt nur auf den (hier ungenutzten) lokalen
+    # Cache des Dashboard-Prozesses. Dass die Änderung auch im Bot-Prozess
+    # ankommt, übernimmt der 60s-TTL in _get_or_load_security_cache().
+    _security_cache.pop(guild_id, None)
+    _settings_snapshot_cache.pop(guild_id, None)
 
 
 # ---------- Tickets ----------
@@ -341,6 +383,13 @@ async def count_open_tickets(guild_id: int) -> int:
         return len(result.scalars().all())
 
 
+async def get_tickets_for_guild(guild_id: int, limit: int = 100) -> list[Ticket]:
+    async with get_session() as session:
+        stmt = select(Ticket).where(Ticket.guild_id == guild_id).order_by(Ticket.created_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
 # ---------- Kurzlebiger Cache für sehr häufig abgefragte Settings ----------
 #
 # Manche Listener (z.B. Warteraum: on_voice_state_update) feuern bei JEDER
@@ -373,6 +422,7 @@ async def get_guild_settings_snapshot(guild_id: int) -> dict:
             "waiting_room_notify_channel_id": settings.waiting_room_notify_channel_id,
             "ticket_category_id": settings.ticket_category_id,
             "mod_log_channel_id": settings.mod_log_channel_id,
+            "autorole_id": settings.autorole_id,
         }
     _settings_snapshot_cache[guild_id] = (now, snapshot)
     return snapshot
@@ -479,6 +529,54 @@ async def log_global_announcement(message: str, guild_count: int, admin_id: int)
     async with get_session() as session:
         session.add(GlobalAnnouncement(sent_by_admin_id=admin_id, message=message, guild_count=guild_count))
         await session.commit()
+
+
+async def get_recent_announcements(limit: int = 20) -> list[GlobalAnnouncement]:
+    async with get_session() as session:
+        stmt = select(GlobalAnnouncement).order_by(GlobalAnnouncement.sent_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_global_stats() -> dict:
+    """Aggregierte Statistiken über alle Server hinweg, fürs Admin-Panel."""
+    async with get_session() as session:
+        guild_count = len((await session.execute(select(BotGuild))).scalars().all())
+        total_members = sum(g.member_count for g in (await session.execute(select(BotGuild))).scalars().all())
+        punishment_count = len((await session.execute(select(Punishment))).scalars().all())
+        open_ticket_count = len((await session.execute(
+            select(Ticket).where(Ticket.status == "open")
+        )).scalars().all())
+        pending_application_count = len((await session.execute(
+            select(Application).where(Application.status == "pending")
+        )).scalars().all())
+        dashboard_user_count = len((await session.execute(select(DashboardUser))).scalars().all())
+        return {
+            "guild_count": guild_count,
+            "total_members": total_members,
+            "punishment_count": punishment_count,
+            "open_ticket_count": open_ticket_count,
+            "pending_application_count": pending_application_count,
+            "dashboard_user_count": dashboard_user_count,
+        }
+
+
+async def update_admin_password(admin_id: int, new_password_hash: str) -> None:
+    async with get_session() as session:
+        admin = await session.get(AdminUser, admin_id)
+        if admin:
+            admin.password_hash = new_password_hash
+            await session.commit()
+
+
+async def delete_admin_user(admin_id: int) -> bool:
+    async with get_session() as session:
+        admin = await session.get(AdminUser, admin_id)
+        if admin is None or admin.is_superadmin:
+            return False  # Superadmins können hierüber nicht gelöscht werden (Schutz vor Aussperrung)
+        await session.delete(admin)
+        await session.commit()
+        return True
 
 
 async def get_all_bot_guilds() -> list[BotGuild]:
@@ -599,3 +697,380 @@ async def update_application_status(application_id: int, status: str, reviewed_b
             application.reviewed_by = reviewed_by
             application.reviewed_at = dt.datetime.utcnow()
             await session.commit()
+
+
+# ---------- Level-System ----------
+
+XP_PER_LEVEL = 100  # einfache, vorhersehbare Formel: Level = XP // 100
+
+
+async def get_level_xp(guild_id: int, user_id: int) -> LevelXP:
+    async with get_session() as session:
+        stmt = select(LevelXP).where(LevelXP.guild_id == guild_id, LevelXP.user_id == user_id)
+        result = await session.execute(stmt)
+        entry = result.scalar_one_or_none()
+        if entry is None:
+            entry = LevelXP(guild_id=guild_id, user_id=user_id)
+            session.add(entry)
+            await session.commit()
+            await session.refresh(entry)
+        return entry
+
+
+async def add_xp(guild_id: int, user_id: int, amount: int, cooldown_seconds: int) -> tuple[int, int, bool] | None:
+    """Vergibt XP, sofern der Cooldown seit der letzten Vergabe abgelaufen ist.
+    Gibt (neue_xp, neues_level, level_up: bool) zurück, oder None, wenn der
+    Cooldown noch aktiv ist (keine XP vergeben)."""
+    async with get_session() as session:
+        stmt = select(LevelXP).where(LevelXP.guild_id == guild_id, LevelXP.user_id == user_id)
+        result = await session.execute(stmt)
+        entry = result.scalar_one_or_none()
+        now = dt.datetime.utcnow()
+
+        if entry is None:
+            entry = LevelXP(guild_id=guild_id, user_id=user_id, xp=0, level=0, last_xp_at=now)
+            session.add(entry)
+        elif (now - entry.last_xp_at).total_seconds() < cooldown_seconds:
+            return None
+
+        old_level = entry.level
+        entry.xp += amount
+        entry.level = entry.xp // XP_PER_LEVEL
+        entry.last_xp_at = now
+        await session.commit()
+        return entry.xp, entry.level, entry.level > old_level
+
+
+async def get_leaderboard(guild_id: int, limit: int = 10) -> list[LevelXP]:
+    async with get_session() as session:
+        stmt = select(LevelXP).where(LevelXP.guild_id == guild_id).order_by(LevelXP.xp.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def add_level_role_reward(guild_id: int, level: int, role_id: int) -> None:
+    async with get_session() as session:
+        session.add(LevelRoleReward(guild_id=guild_id, level=level, role_id=role_id))
+        await session.commit()
+
+
+async def get_level_role_rewards(guild_id: int) -> list[LevelRoleReward]:
+    async with get_session() as session:
+        stmt = select(LevelRoleReward).where(LevelRoleReward.guild_id == guild_id).order_by(
+            LevelRoleReward.level.asc()
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def remove_level_role_reward(reward_id: int) -> bool:
+    async with get_session() as session:
+        reward = await session.get(LevelRoleReward, reward_id)
+        if reward is None:
+            return False
+        await session.delete(reward)
+        await session.commit()
+        return True
+
+
+# ---------- Invite-Tracking ----------
+
+async def get_invite_records(guild_id: int) -> dict[str, InviteRecord]:
+    async with get_session() as session:
+        stmt = select(InviteRecord).where(InviteRecord.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return {rec.code: rec for rec in result.scalars().all()}
+
+
+async def upsert_invite_record(guild_id: int, code: str, inviter_id: int, uses: int) -> None:
+    async with get_session() as session:
+        stmt = select(InviteRecord).where(InviteRecord.code == code)
+        result = await session.execute(stmt)
+        record = result.scalar_one_or_none()
+        if record is None:
+            session.add(InviteRecord(guild_id=guild_id, code=code, inviter_id=inviter_id, uses=uses))
+        else:
+            record.uses = uses
+            record.inviter_id = inviter_id
+        await session.commit()
+
+
+async def remove_invite_record(code: str) -> None:
+    async with get_session() as session:
+        stmt = select(InviteRecord).where(InviteRecord.code == code)
+        result = await session.execute(stmt)
+        record = result.scalar_one_or_none()
+        if record:
+            await session.delete(record)
+            await session.commit()
+
+
+async def record_invite_join(guild_id: int, member_id: int, inviter_id: int, is_fake: bool) -> None:
+    async with get_session() as session:
+        session.add(InviteJoin(
+            guild_id=guild_id, member_id=member_id, inviter_id=inviter_id, is_fake=is_fake,
+        ))
+        await session.commit()
+
+
+async def get_invite_count(guild_id: int, user_id: int, since: "dt.datetime | None" = None) -> int:
+    """Zählt ECHTE (nicht Fake-)Einladungen eines Users. Mit since= nur
+    Beitritte NACH diesem Zeitpunkt (für Gewinnspiele mit 'nur neue Invites')."""
+    async with get_session() as session:
+        stmt = select(InviteJoin).where(
+            InviteJoin.guild_id == guild_id, InviteJoin.inviter_id == user_id, InviteJoin.is_fake == False,  # noqa: E712
+        )
+        if since:
+            stmt = stmt.where(InviteJoin.joined_at >= since)
+        result = await session.execute(stmt)
+        return len(result.scalars().all())
+
+
+# ---------- Giveaway-System ----------
+
+async def create_giveaway(guild_id: int, channel_id: int, name: str, description: str, sponsor: str,
+                           invites_required: int, use_new_invites_only: bool, started_by: int,
+                           ends_at: "dt.datetime") -> Giveaway:
+    async with get_session() as session:
+        giveaway = Giveaway(
+            guild_id=guild_id, channel_id=channel_id, name=name, description=description, sponsor=sponsor,
+            invites_required=invites_required, use_new_invites_only=use_new_invites_only,
+            started_by=started_by, ends_at=ends_at,
+        )
+        session.add(giveaway)
+        await session.commit()
+        await session.refresh(giveaway)
+        return giveaway
+
+
+async def set_giveaway_message_id(giveaway_id: int, message_id: int) -> None:
+    async with get_session() as session:
+        giveaway = await session.get(Giveaway, giveaway_id)
+        if giveaway:
+            giveaway.message_id = message_id
+            await session.commit()
+
+
+async def get_active_giveaways() -> list[Giveaway]:
+    async with get_session() as session:
+        stmt = select(Giveaway).where(Giveaway.ended == False)  # noqa: E712
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_giveaways_for_guild(guild_id: int) -> list[Giveaway]:
+    async with get_session() as session:
+        stmt = select(Giveaway).where(Giveaway.guild_id == guild_id).order_by(Giveaway.started_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_giveaway(giveaway_id: int) -> Giveaway | None:
+    async with get_session() as session:
+        return await session.get(Giveaway, giveaway_id)
+
+
+async def end_giveaway(giveaway_id: int, winner_id: int) -> None:
+    async with get_session() as session:
+        giveaway = await session.get(Giveaway, giveaway_id)
+        if giveaway:
+            giveaway.ended = True
+            giveaway.winner_id = winner_id
+            await session.commit()
+
+
+async def has_entered_giveaway(giveaway_id: int, user_id: int) -> bool:
+    async with get_session() as session:
+        stmt = select(GiveawayEntry).where(
+            GiveawayEntry.giveaway_id == giveaway_id, GiveawayEntry.user_id == user_id,
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+
+async def add_giveaway_entry(giveaway_id: int, user_id: int) -> bool:
+    if await has_entered_giveaway(giveaway_id, user_id):
+        return False
+    async with get_session() as session:
+        session.add(GiveawayEntry(giveaway_id=giveaway_id, user_id=user_id))
+        await session.commit()
+        return True
+
+
+async def get_giveaway_entries(giveaway_id: int) -> list[GiveawayEntry]:
+    async with get_session() as session:
+        stmt = select(GiveawayEntry).where(GiveawayEntry.giveaway_id == giveaway_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Admin-Panel: Gruppen-Berechtigungssystem ----------
+
+async def create_permission_group(name: str, created_by: int) -> PermissionGroup:
+    async with get_session() as session:
+        group = PermissionGroup(name=name, created_by=created_by)
+        session.add(group)
+        await session.commit()
+        await session.refresh(group)
+        return group
+
+
+async def get_permission_groups() -> list[PermissionGroup]:
+    async with get_session() as session:
+        result = await session.execute(select(PermissionGroup))
+        return list(result.scalars().all())
+
+
+async def get_permission_group(group_id: int) -> PermissionGroup | None:
+    async with get_session() as session:
+        return await session.get(PermissionGroup, group_id)
+
+
+async def delete_permission_group(group_id: int) -> None:
+    async with get_session() as session:
+        group = await session.get(PermissionGroup, group_id)
+        if group:
+            await session.delete(group)
+        # Zugehörige Einträge in den beiden Verknüpfungstabellen mit aufräumen
+        entries = (await session.execute(
+            select(PermissionGroupEntry).where(PermissionGroupEntry.group_id == group_id)
+        )).scalars().all()
+        for e in entries:
+            await session.delete(e)
+        memberships = (await session.execute(
+            select(AdminUserGroup).where(AdminUserGroup.group_id == group_id)
+        )).scalars().all()
+        for m in memberships:
+            await session.delete(m)
+        await session.commit()
+
+
+async def get_group_permissions(group_id: int) -> set[str]:
+    async with get_session() as session:
+        stmt = select(PermissionGroupEntry.permission_key).where(PermissionGroupEntry.group_id == group_id)
+        result = await session.execute(stmt)
+        return set(result.scalars().all())
+
+
+async def set_group_permissions(group_id: int, permission_keys: list[str]) -> None:
+    """Ersetzt ALLE Rechte einer Gruppe durch die übergebene Liste."""
+    async with get_session() as session:
+        existing = (await session.execute(
+            select(PermissionGroupEntry).where(PermissionGroupEntry.group_id == group_id)
+        )).scalars().all()
+        for e in existing:
+            await session.delete(e)
+        for key in permission_keys:
+            session.add(PermissionGroupEntry(group_id=group_id, permission_key=key))
+        await session.commit()
+
+
+async def assign_admin_to_group(admin_id: int, group_id: int) -> None:
+    async with get_session() as session:
+        stmt = select(AdminUserGroup).where(
+            AdminUserGroup.admin_user_id == admin_id, AdminUserGroup.group_id == group_id,
+        )
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            return
+        session.add(AdminUserGroup(admin_user_id=admin_id, group_id=group_id))
+        await session.commit()
+
+
+async def remove_admin_from_group(admin_id: int, group_id: int) -> None:
+    async with get_session() as session:
+        stmt = select(AdminUserGroup).where(
+            AdminUserGroup.admin_user_id == admin_id, AdminUserGroup.group_id == group_id,
+        )
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            await session.delete(existing)
+            await session.commit()
+
+
+async def get_admin_groups(admin_id: int) -> list[PermissionGroup]:
+    async with get_session() as session:
+        stmt = select(AdminUserGroup.group_id).where(AdminUserGroup.admin_user_id == admin_id)
+        group_ids = (await session.execute(stmt)).scalars().all()
+        if not group_ids:
+            return []
+        result = await session.execute(select(PermissionGroup).where(PermissionGroup.id.in_(group_ids)))
+        return list(result.scalars().all())
+
+
+async def get_group_members(group_id: int) -> list[AdminUser]:
+    async with get_session() as session:
+        stmt = select(AdminUserGroup.admin_user_id).where(AdminUserGroup.group_id == group_id)
+        admin_ids = (await session.execute(stmt)).scalars().all()
+        if not admin_ids:
+            return []
+        result = await session.execute(select(AdminUser).where(AdminUser.id.in_(admin_ids)))
+        return list(result.scalars().all())
+
+
+async def get_effective_admin_permissions(admin_id: int) -> set[str]:
+    """Individuelle Rechte UND alle Rechte aller Gruppen, denen der Admin
+    angehört, zusammen (Vereinigungsmenge)."""
+    individual = await get_admin_permissions(admin_id)
+    groups = await get_admin_groups(admin_id)
+    combined = set(individual)
+    for group in groups:
+        combined |= await get_group_permissions(group.id)
+    return combined
+
+
+# ---------- Bewerbungssystem-Erweiterung ----------
+
+async def update_application_question(question_id: int, new_text: str) -> bool:
+    async with get_session() as session:
+        question = await session.get(ApplicationQuestion, question_id)
+        if question is None:
+            return False
+        question.question_text = new_text
+        await session.commit()
+        return True
+
+
+async def set_application_notify_channel(guild_id: int, channel_id: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(ApplicationNotifyChannel, guild_id)
+        if entry is None:
+            entry = ApplicationNotifyChannel(guild_id=guild_id, channel_id=channel_id)
+            session.add(entry)
+        else:
+            entry.channel_id = channel_id
+        await session.commit()
+
+
+async def get_application_notify_channel(guild_id: int) -> int:
+    async with get_session() as session:
+        entry = await session.get(ApplicationNotifyChannel, guild_id)
+        return entry.channel_id if entry else 0
+
+
+async def delete_application(application_id: int) -> bool:
+    async with get_session() as session:
+        application = await session.get(Application, application_id)
+        if application is None:
+            return False
+        answers = (await session.execute(
+            select(ApplicationAnswer).where(ApplicationAnswer.application_id == application_id)
+        )).scalars().all()
+        for a in answers:
+            await session.delete(a)
+        await session.delete(application)
+        await session.commit()
+        return True
+
+
+async def get_application_stats(guild_id: int) -> dict:
+    async with get_session() as session:
+        all_apps = (await session.execute(
+            select(Application).where(Application.guild_id == guild_id)
+        )).scalars().all()
+        return {
+            "pending": len([a for a in all_apps if a.status == "pending"]),
+            "accepted": len([a for a in all_apps if a.status == "accepted"]),
+            "rejected": len([a for a in all_apps if a.status == "rejected"]),
+            "total": len(all_apps),
+        }

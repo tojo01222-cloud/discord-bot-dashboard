@@ -24,10 +24,17 @@ from bot.utils.db_helpers import (
     get_application_answers,
     update_application_status,
     get_bot_guild_ids,
+    update_application_question,
+    set_application_notify_channel,
+    get_application_notify_channel,
+    delete_application,
+    get_application_stats,
 )
+from dashboard.backend.bot_api import fetch_guild_text_channels, send_channel_message
 
 application_router = APIRouter()
-templates = Jinja2Templates(directory="dashboard/backend/templates")
+from dashboard.backend.template_context import global_template_context
+templates = Jinja2Templates(directory="dashboard/backend/templates", context_processors=[global_template_context])
 
 
 def _current_user(request: Request) -> dict | None:
@@ -85,6 +92,13 @@ async def application_form_submit(request: Request, guild_id: int):
 
     await create_application(guild_id, int(user["discord_id"]), user["username"], answers)
 
+    notify_channel_id = await get_application_notify_channel(guild_id)
+    if notify_channel_id:
+        await send_channel_message(
+            notify_channel_id,
+            f"Neue Bewerbung von {user['username']} eingegangen — im Dashboard einsehbar.",
+        )
+
     return templates.TemplateResponse(request, "bewerbung_form.html", {
         "user": user, "messages": [{"type": "success", "text": "Deine Bewerbung wurde übermittelt!"}],
         "guild_id": guild_id, "config": config, "questions": [], "closed": False, "already_applied": True,
@@ -107,21 +121,38 @@ async def application_settings_page(request: Request, guild_id: int):
 
     config = await get_application_config(guild_id)
     questions = await get_application_questions(guild_id)
+    notify_channel_id = await get_application_notify_channel(guild_id)
+    channels = await fetch_guild_text_channels(guild_id)
+    stats = await get_application_stats(guild_id)
     return templates.TemplateResponse(request, "bewerbung_einstellungen.html", {
         "user": _current_user(request), "messages": [],
         "guild": {"id": guild_id, "name": guild["name"]},
         "config": config, "questions": questions,
+        "notify_channel_id": notify_channel_id, "channels": channels, "stats": stats,
     })
 
 
 @application_router.post("/dashboard/{guild_id}/bewerbung/einstellungen")
 async def application_settings_save(request: Request, guild_id: int,
-                                     enabled: str = Form(""), welcome_text: str = Form("")):
+                                     enabled: str = Form(""), welcome_text: str = Form(""),
+                                     notify_channel_id: int = Form(0)):
     denied, _guild = await _require_guild_admin(request, guild_id)
     if denied:
         return denied
     await set_application_config(guild_id, enabled == "on", welcome_text)
+    await set_application_notify_channel(guild_id, notify_channel_id)
     return RedirectResponse(f"/dashboard/{guild_id}/bewerbung/einstellungen?saved=1", status_code=303)
+
+
+@application_router.post("/dashboard/{guild_id}/bewerbung/fragen/{question_id}/bearbeiten")
+async def application_question_edit(request: Request, guild_id: int, question_id: int,
+                                     question_text: str = Form(...)):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    if question_text.strip():
+        await update_application_question(question_id, question_text.strip())
+    return RedirectResponse(f"/dashboard/{guild_id}/bewerbung/einstellungen", status_code=303)
 
 
 @application_router.post("/dashboard/{guild_id}/bewerbung/fragen")
@@ -144,17 +175,29 @@ async def application_question_remove(request: Request, guild_id: int, question_
 
 
 @application_router.get("/dashboard/{guild_id}/bewerbungen", response_class=HTMLResponse)
-async def applications_list_page(request: Request, guild_id: int):
+async def applications_list_page(request: Request, guild_id: int, status: str = ""):
     denied, guild = await _require_guild_admin(request, guild_id)
     if denied:
         return denied
 
     applications = await get_applications_for_guild(guild_id)
+    if status:
+        applications = [a for a in applications if a.status == status]
+
     return templates.TemplateResponse(request, "bewerbung_liste.html", {
         "user": _current_user(request), "messages": [],
         "guild": {"id": guild_id, "name": guild["name"]},
-        "applications": applications,
+        "applications": applications, "status": status,
     })
+
+
+@application_router.post("/dashboard/{guild_id}/bewerbungen/{application_id}/loeschen")
+async def application_delete(request: Request, guild_id: int, application_id: int):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await delete_application(application_id)
+    return RedirectResponse(f"/dashboard/{guild_id}/bewerbungen", status_code=303)
 
 
 @application_router.get("/dashboard/{guild_id}/bewerbungen/{application_id}", response_class=HTMLResponse)

@@ -9,7 +9,7 @@
 <body>
     <main class="content">
         <div class="login-box">
-            <h1>🛡️ Admin-Panel</h1>
+            <h1>Admin-Panel</h1>
             <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
             {% for message in messages %}
             <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
@@ -25,6 +25,11 @@
                 </div>
                 <button type="submit" class="btn">Anmelden</button>
             </form>
+            {% if operator_invite %}
+            <p class="small-print">
+                <a href="{{ operator_invite }}" target="_blank" style="color:#a3a3a3;">Unserem Discord beitreten</a>
+            </p>
+            {% endif %}
         </div>
     </main>
 </body>

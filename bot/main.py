@@ -20,7 +20,9 @@ from bot.database.models import GuildSettings
 from bot.utils.permissions import InsufficientPermissionError, MaintenanceModeError
 from bot.utils.embeds import error_embed
 from bot.utils.i18n import t
-from bot.utils.db_helpers import upsert_bot_guild, remove_bot_guild, get_bot_control_state
+from bot.utils.db_helpers import (
+    upsert_bot_guild, remove_bot_guild, get_bot_control_state, get_guild_settings_snapshot,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("bot.main")
@@ -101,6 +103,23 @@ class AllInOneBot(commands.Bot):
     async def on_guild_remove(self, guild: discord.Guild) -> None:
         await remove_bot_guild(guild.id)
         log.info("Bot wurde von Server '%s' (%s) entfernt.", guild.name, guild.id)
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        # Autorole: das Datenbankfeld GuildSettings.autorole_id existierte schon
+        # seit Phase 1, aber die eigentliche Vergabe-Logik fehlte bisher -- jetzt
+        # über das Server-Dashboard einstellbar (siehe settings.html) und hier
+        # tatsächlich umgesetzt.
+        snapshot = await get_guild_settings_snapshot(member.guild.id)
+        autorole_id = snapshot.get("autorole_id", 0)
+        if not autorole_id:
+            return
+        role = member.guild.get_role(autorole_id)
+        if not role:
+            return
+        try:
+            await member.add_roles(role, reason="Autorole")
+        except discord.Forbidden:
+            log.warning("Konnte Autorole in Guild %s nicht vergeben (fehlende Berechtigung).", member.guild.id)
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         # Gilt sowohl für !prefix- als auch /slash-Aufrufe von Hybrid-Commands.

@@ -14,9 +14,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from dashboard.backend.config import dashboard_config as cfg
 from dashboard.backend import discord_oauth
-from dashboard.backend.bot_api import fetch_guild_text_channels
+from dashboard.backend.bot_api import (
+    fetch_guild_text_channels, fetch_guild_voice_channels, fetch_guild_categories, fetch_guild_roles,
+)
 from dashboard.backend.admin_routes import admin_router
 from dashboard.backend.application_routes import application_router
+from dashboard.backend.server_extra_routes import server_extra_router
 from bot.database.db import init_db, get_session
 from bot.utils.db_helpers import (
     upsert_dashboard_user,
@@ -31,9 +34,11 @@ log = logging.getLogger("dashboard.main")
 app = FastAPI(title="Bot Dashboard")
 app.add_middleware(SessionMiddleware, secret_key=cfg.SESSION_SECRET, same_site="lax")
 app.mount("/static", StaticFiles(directory="dashboard/backend/static"), name="static")
-templates = Jinja2Templates(directory="dashboard/backend/templates")
+from dashboard.backend.template_context import global_template_context
+templates = Jinja2Templates(directory="dashboard/backend/templates", context_processors=[global_template_context])
 app.include_router(admin_router)
 app.include_router(application_router)
+app.include_router(server_extra_router)
 
 
 @app.exception_handler(Exception)
@@ -192,12 +197,18 @@ async def guild_settings_page(request: Request, guild_id: int):
         settings = await get_or_create_guild_settings(session, guild_id)
 
     text_channels = await fetch_guild_text_channels(guild_id)
+    voice_channels = await fetch_guild_voice_channels(guild_id)
+    categories = await fetch_guild_categories(guild_id)
+    roles = await fetch_guild_roles(guild_id)
 
     return templates.TemplateResponse(request, "settings.html", {
         "user": user, "messages": [],
         "guild": {"id": guild_id, "name": guild["name"]},
         "settings": settings,
         "text_channels": text_channels,
+        "voice_channels": voice_channels,
+        "categories": categories,
+        "roles": roles,
     })
 
 
@@ -208,6 +219,13 @@ async def save_guild_settings(
     mod_log_channel_id: int = Form(0),
     punishment_log_channel_id: int = Form(0),
     announcement_channel_id: int = Form(0),
+    ticket_category_id: int = Form(0),
+    waiting_room_voice_channel_id: int = Form(0),
+    waiting_room_notify_channel_id: int = Form(0),
+    autorole_id: int = Form(0),
+    anti_nuke_enabled: str = Form(""),
+    anti_spam_enabled: str = Form(""),
+    music_bound_voice_channel_id: int = Form(0),
 ):
     denied, _guild = await _require_guild_access(request, guild_id)
     if denied:
@@ -215,5 +233,8 @@ async def save_guild_settings(
 
     await save_guild_settings_from_dashboard(
         guild_id, language, mod_log_channel_id, punishment_log_channel_id, announcement_channel_id,
+        ticket_category_id, waiting_room_voice_channel_id, waiting_room_notify_channel_id,
+        autorole_id, anti_nuke_enabled == "on", anti_spam_enabled == "on",
+        music_bound_voice_channel_id,
     )
     return RedirectResponse(f"/dashboard/{guild_id}?saved=1", status_code=303)

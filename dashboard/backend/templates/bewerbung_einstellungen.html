@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Bewerbungs-Einstellungen — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
 <h1>Bewerbungs-Einstellungen — {{ guild.name }}</h1>
+
+<div class="admin-stat-grid" style="margin-bottom:24px;">
+    <div class="admin-stat"><div class="value">{{ stats.pending }}</div><div class="label">Offen</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.accepted }}</div><div class="label">Angenommen</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.rejected }}</div><div class="label">Abgelehnt</div></div>
+    <div class="admin-stat"><div class="value">{{ stats.total }}</div><div class="label">Gesamt</div></div>
+</div>
 
 <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="settings-form">
     <div class="field">
@@ -15,19 +22,32 @@
         <label for="welcome_text">Begrüßungstext</label>
         <input type="text" id="welcome_text" name="welcome_text" value="{{ config.welcome_text }}">
     </div>
+    <div class="field">
+        <label for="notify_channel_id">Benachrichtigungs-Kanal (bei neuer Bewerbung)</label>
+        <select name="notify_channel_id" id="notify_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if notify_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
     <button type="submit" class="btn">Speichern</button>
 </form>
 
 <h2 style="margin-top:40px; font-size:18px;">Fragen</h2>
 {% for q in questions %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262a3a;">
-    <span>{{ q.question_text }}</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/loeschen">
+<div style="padding:12px 0; border-bottom:1px solid #2a2a2a;">
+    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/bearbeiten" style="display:flex; gap:8px; align-items:center;">
+        <input type="text" name="question_text" value="{{ q.question_text }}"
+               style="flex:1; background:#0d0d0d;border:1px solid #2a2a2a;color:#ffffff;padding:8px 12px;border-radius:6px;">
+        <button type="submit" class="btn btn-small">Speichern</button>
+    </form>
+    <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen/{{ q.id }}/loeschen" style="margin-top:6px;">
         <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
     </form>
 </div>
 {% else %}
-<p style="color:#8a90a2;">Noch keine Fragen eingerichtet.</p>
+<p style="color:#a3a3a3;">Noch keine Fragen eingerichtet.</p>
 {% endfor %}
 
 <form method="post" action="/dashboard/{{ guild.id }}/bewerbung/fragen" class="settings-form" style="margin-top:20px;">

@@ -43,16 +43,89 @@
         </select>
     </div>
 
+    <div class="field">
+        <label for="ticket_category_id">Ticket-Kategorie (neue Ticket-Kanäle entstehen hier)</label>
+        <select name="ticket_category_id" id="ticket_category_id">
+            <option value="0">— keine Kategorie ausgewählt —</option>
+            {% for cat in categories %}
+            <option value="{{ cat.id }}" {% if settings.ticket_category_id == cat.id|int %}selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="waiting_room_voice_channel_id">Warteraum — Sprachkanal</label>
+        <select name="waiting_room_voice_channel_id" id="waiting_room_voice_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for vc in voice_channels %}
+            <option value="{{ vc.id }}" {% if settings.waiting_room_voice_channel_id == vc.id|int %}selected{% endif %}>{{ vc.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="waiting_room_notify_channel_id">Warteraum — Melde-Textkanal</label>
+        <select name="waiting_room_notify_channel_id" id="waiting_room_notify_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in text_channels %}
+            <option value="{{ ch.id }}" {% if settings.waiting_room_notify_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="autorole_id">Autorole (wird neuen Mitgliedern automatisch gegeben)</label>
+        <select name="autorole_id" id="autorole_id">
+            <option value="0">— keine Rolle ausgewählt —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}" {% if settings.autorole_id == role.id|int %}selected{% endif %}>{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="music_bound_voice_channel_id">Musik — dauerhafter Sprachkanal</label>
+        <select name="music_bound_voice_channel_id" id="music_bound_voice_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for vc in voice_channels %}
+            <option value="{{ vc.id }}" {% if settings.music_bound_voice_channel_id == vc.id|int %}selected{% endif %}>{{ vc.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="field">
+        <label>
+            <input type="checkbox" name="anti_nuke_enabled" value="on" {% if settings.anti_nuke_enabled %}checked{% endif %}>
+            Anti-Nuke aktiv
+        </label>
+    </div>
+
+    <div class="field">
+        <label>
+            <input type="checkbox" name="anti_spam_enabled" value="on" {% if settings.anti_spam_enabled %}checked{% endif %}>
+            Anti-Spam aktiv
+        </label>
+    </div>
+
     <button type="submit" class="btn">Speichern</button>
 </form>
 
 <div style="display:flex; gap:12px; margin-top:32px; flex-wrap:wrap;">
-    <a href="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="btn btn-small btn-ghost">📝 Bewerbungssystem einrichten</a>
-    <a href="/dashboard/{{ guild.id }}/bewerbungen" class="btn btn-small btn-ghost">📋 Bewerbungen ansehen</a>
+    <a href="/dashboard/{{ guild.id }}/bewerbung/einstellungen" class="btn btn-small btn-ghost">Bewerbungssystem einrichten</a>
+    <a href="/dashboard/{{ guild.id }}/bewerbungen" class="btn btn-small btn-ghost">Bewerbungen ansehen</a>
+    <a href="/dashboard/{{ guild.id }}/team" class="btn btn-small btn-ghost">Team</a>
+    <a href="/dashboard/{{ guild.id }}/levelrollen" class="btn btn-small btn-ghost">Level-Rollen</a>
+    <a href="/dashboard/{{ guild.id }}/vertrauensliste" class="btn btn-small btn-ghost">Anti-Nuke-Whitelist</a>
+    <a href="/dashboard/{{ guild.id }}/gewinnspiele" class="btn btn-small btn-ghost">Gewinnspiele</a>
+    <a href="/dashboard/{{ guild.id }}/strafen" class="btn btn-small btn-ghost">Strafverzeichnis</a>
+    <a href="/dashboard/{{ guild.id }}/leaderboard" class="btn btn-small btn-ghost">Leaderboard</a>
+    <a href="/dashboard/{{ guild.id }}/moderation" class="btn btn-small btn-ghost">Moderation</a>
+    <a href="/dashboard/{{ guild.id }}/ankuendigung" class="btn btn-small btn-ghost">Ankündigung senden</a>
+    <a href="/dashboard/{{ guild.id }}/tickets" class="btn btn-small btn-ghost">Tickets</a>
 </div>
 
 <p class="hint">
-    Weitere Einstellungen (Anti-Nuke-Whitelist, Team-Ränge, Ticket-Design, Musik, ...)
-    kommen in den nächsten Ausbaustufen des Dashboards dazu.
+    Weitere Einstellungen (Ticket-Design, Team-Rang-Reihenfolge einrichten, ...)
+    bleiben vorerst Discord-Befehle — kommen bei Bedarf in einer der nächsten Ausbaustufen dazu.
 </p>
 {% endblock %}

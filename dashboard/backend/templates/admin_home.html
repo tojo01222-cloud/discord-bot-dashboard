@@ -4,7 +4,7 @@
 <h1>Übersicht</h1>
 
 {% if maintenance_mode %}
-<div class="flash flash-error">🔧 Der Bot befindet sich aktuell im Wartungsmodus.</div>
+<div class="flash flash-error">Der Bot befindet sich aktuell im Wartungsmodus.</div>
 {% endif %}
 
 <div class="admin-stat-grid">
@@ -17,7 +17,7 @@
         <div class="label">Mitglieder gesamt (aller Server)</div>
     </div>
     <div class="admin-stat">
-        <div class="value">{{ "🟢 Aktiv" if not maintenance_mode else "🔧 Wartung" }}</div>
+        <div class="value">{{ "Aktiv" if not maintenance_mode else "Wartung" }}</div>
         <div class="label">Bot-Status</div>
     </div>
 </div>

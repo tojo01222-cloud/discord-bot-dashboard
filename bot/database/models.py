@@ -324,3 +324,44 @@ class GiveawayEntry(Base):
     giveaway_id: Mapped[int] = mapped_column(Integer, index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     entered_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+# ---------- Admin-Panel: Gruppen-Berechtigungssystem ----------
+
+class PermissionGroup(Base):
+    """Eine Berechtigungsgruppe (bündelt mehrere permission_key). Admins werden
+    Gruppen zugewiesen, statt jedes Recht einzeln pro Person zu vergeben."""
+    __tablename__ = "permission_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True)
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class PermissionGroupEntry(Base):
+    """Ein einzelnes Recht (permission_key) innerhalb einer Gruppe."""
+    __tablename__ = "permission_group_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(Integer, index=True)
+    permission_key: Mapped[str] = mapped_column(String(50))
+
+
+class AdminUserGroup(Base):
+    """Verknüpfung: welcher AdminUser ist Mitglied welcher PermissionGroup."""
+    __tablename__ = "admin_user_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    admin_user_id: Mapped[int] = mapped_column(Integer, index=True)
+    group_id: Mapped[int] = mapped_column(Integer, index=True)
+
+
+# ---------- Bewerbungssystem-Erweiterung ----------
+
+class ApplicationNotifyChannel(Base):
+    """In welchem Discord-Kanal neue Bewerbungen gemeldet werden (pro Server)."""
+    __tablename__ = "application_notify_channels"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, default=0)

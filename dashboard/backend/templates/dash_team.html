@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Team — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Team — {{ guild.name }}</h1>
+
+<h2 style="font-size:16px; margin-top:24px;">Ränge (niedrig → hoch)</h2>
+{% if not ranks %}
+<p style="color:#a3a3a3;">Noch keine Team-Ränge eingerichtet (siehe <code>/teamrank add</code> in Discord).</p>
+{% else %}
+<ol>
+    {% for r in ranks %}
+    <li>Rollen-ID {{ r.role_id }} (Position {{ r.position }})</li>
+    {% endfor %}
+</ol>
+{% endif %}
+
+<h2 style="font-size:16px; margin-top:24px;">Mitglieder ({{ members|length }})</h2>
+{% if not members %}
+<p style="color:#a3a3a3;">Das Team ist aktuell leer.</p>
+{% else %}
+<div class="admin-card" style="background:#0d0d0d; border:1px solid #2a2a2a; border-radius:14px; padding:20px;">
+    {% for m in members %}
+    <div style="padding:8px 0; border-bottom:1px solid #2a2a2a;">
+        Discord-ID {{ m.user_id }} —
+        {% if m.current_rank_id and m.current_rank_id in ranks_by_id %}
+        Rang-Position {{ ranks_by_id[m.current_rank_id].position }}
+        {% else %}
+        kein Rang zugewiesen
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

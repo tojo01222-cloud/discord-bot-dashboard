@@ -10,17 +10,25 @@
 <body>
     <div class="admin-layout">
         <nav class="admin-sidebar">
-            <div class="admin-brand">🛡️ Admin-Panel</div>
+            <div class="admin-brand">Admin-Panel</div>
             <a href="/admin">Übersicht</a>
+            <a href="/admin/stats">Statistiken</a>
             <a href="/admin/servers">Server</a>
             <a href="/admin/broadcast">Ankündigungen</a>
+            <a href="/admin/announcements">Ankündigungs-Historie</a>
             <a href="/admin/bot-control">Bot-Steuerung</a>
             <a href="/admin/users">Dashboard-User</a>
             {% if admin and admin.is_superadmin %}
             <a href="/admin/permissions">Rechteverwaltung</a>
+            <a href="/admin/groups">Berechtigungsgruppen</a>
             {% endif %}
+            <a href="/admin/system">System</a>
+            <a href="/admin/account">Mein Account</a>
             <div class="admin-sidebar-footer">
                 <span>{{ admin.username if admin }}</span>
+                {% if operator_invite %}
+                <a href="{{ operator_invite }}" target="_blank">Discord</a>
+                {% endif %}
                 <a href="/admin/logout">Logout</a>
             </div>
         </nav>

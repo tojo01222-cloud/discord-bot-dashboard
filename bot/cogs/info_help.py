@@ -10,6 +10,24 @@ from bot.utils.embeds import base_embed
 from bot.utils.i18n import t
 from bot.utils.db_helpers import get_guild_language
 
+# Anzeigename + Emoji pro Cog-Klasse, fürs /help-Kommando. Ein neuer Cog ohne
+# Eintrag hier taucht trotzdem auf (mit Klassennamen als Fallback) -- diese
+# Liste ist nur für schönere Beschriftung, kein Muss zum Funktionieren.
+COG_DISPLAY = {
+    "Moderation": ("🛡️", "Moderation"),
+    "TeamManagement": ("👥", "Team"),
+    "AntiNuke": ("💣", "Anti-Nuke"),
+    "AntiSpam": ("🚫", "Anti-Spam"),
+    "Musik": ("🎵", "Musik"),
+    "Tickets": ("🎫", "Tickets"),
+    "Warteraum": ("🙋", "Warteraum"),
+    "Level": ("📈", "Level"),
+    "Invites": ("📨", "Invites"),
+    "Giveaway": ("🎉", "Gewinnspiele"),
+    "Fun": ("🎈", "Fun"),
+    "InfoHelp": ("ℹ️", "Info"),
+}
+
 
 class InfoHelp(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -20,24 +38,50 @@ class InfoHelp(commands.Cog):
         lang = await get_guild_language(ctx.guild.id) if ctx.guild else "de"
 
         embed = base_embed(t("help.title", lang))
-        # In den nächsten Phasen wird das automatisch aus allen geladenen Cogs
-        # gruppiert nach Kategorie generiert (Moderation, Team, Musik, Fun, ...).
-        # Für das Grundgerüst hier eine statische Vorschau:
-        embed.add_field(
-            name="🛡️ Moderation" if lang == "de" else "🛡️ Moderation",
-            value="`/kick` `/ban` `/timeout` `/warn` ...",
-            inline=False,
-        )
-        embed.add_field(
-            name="👥 Team" if lang == "de" else "👥 Team",
-            value="`/uprank` `/downrank` `/teamkick` `/teamliste` ...",
-            inline=False,
-        )
-        embed.add_field(
-            name="🎵 Musik" if lang == "de" else "🎵 Music",
-            value="`/play` `/skip` `/queue` ...",
-            inline=False,
-        )
+        total_commands = 0
+        total_chars = len(embed.title or "")
+
+        for cog_name, cog in sorted(self.bot.cogs.items()):
+            lines = []
+            for cmd in cog.get_commands():
+                if isinstance(cmd, commands.Group):
+                    for sub in cmd.commands:
+                        lines.append(f"`/{cmd.name} {sub.name}`")
+                        total_commands += 1
+                else:
+                    lines.append(f"`/{cmd.name}`")
+                    total_commands += 1
+
+            if not lines:
+                continue
+
+            emoji, display_name = COG_DISPLAY.get(cog_name, ("📦", cog_name))
+            value = " ".join(lines)
+            if len(value) > 1000:  # Discord-Embed-Feldlimit (1024) mit Puffer
+                value = value[:1000] + " ..."
+
+            # Discord begrenzt nicht nur jedes Feld einzeln, sondern auch das
+            # GESAMTE Embed auf 6000 Zeichen -- bei über 70 Befehlen inzwischen
+            # real relevant. Sicherheitsmarge bei 5500, danach nur noch ein
+            # Sammel-Hinweis statt eines weiteren vollen Feldes.
+            field_name = f"{emoji} {display_name}"
+            if total_chars + len(field_name) + len(value) > 5500:
+                embed.add_field(
+                    name="…" if lang == "de" else "…",
+                    value=("Es gibt noch mehr Befehle, als in eine Nachricht passen — frag ein "
+                           "Team-Mitglied oder schau in der Dokumentation nach der vollständigen Liste."
+                           if lang == "de" else
+                           "There are more commands than fit in one message — ask a team member "
+                           "or check the documentation for the full list."),
+                    inline=False,
+                )
+                break
+
+            embed.add_field(name=field_name, value=value, inline=False)
+            total_chars += len(field_name) + len(value)
+
+        embed.set_footer(text=f"{total_commands} Befehle insgesamt" if lang == "de"
+                          else f"{total_commands} commands total")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="serverinfo", description="Zeigt Informationen über diesen Server.")
