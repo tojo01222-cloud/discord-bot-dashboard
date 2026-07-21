@@ -22,7 +22,14 @@ from bot.database.models import (
     NewsPost, StaffNote,
     AdConfig, Partner, ReactionRole, SuggestionConfig, Suggestion,
     BirthdayConfig, Birthday, EconomyBalance, ShopItem,
+    WelcomeConfig, TimedAutorole, VerificationConfig,
+    Poll, PollVote, StickyMessage, BannedWord, VoiceTime, ServerBackup,
+    ScheduledEvent, DashboardAuditLog, DailyActivity,
+    GlobalBlocklist, AdminLoginHistory,
+    ErrorLog, ApiCallStat, GuildTag, GuildAdminNote, ChangelogEntry,
+    FeatureFlag, Feedback, ScheduledMaintenance, RoleTemplate, TicketPanel,
 )
+import json as _json
 
 
 async def get_or_create_guild_settings(session: AsyncSession, guild_id: int) -> GuildSettings:
@@ -1537,36 +1544,6 @@ async def set_news_published(post_id: int, published: bool) -> None:
             await session.commit()
 
 
-# ---------- Staff-Notizen (/note, /notes) ----------
-
-async def add_staff_note(guild_id: int, user_id: int, note: str, created_by: int) -> StaffNote:
-    async with get_session() as session:
-        entry = StaffNote(guild_id=guild_id, user_id=user_id, note=note, created_by=created_by)
-        session.add(entry)
-        await session.commit()
-        await session.refresh(entry)
-        return entry
-
-
-async def get_staff_notes(guild_id: int, user_id: int) -> list[StaffNote]:
-    async with get_session() as session:
-        stmt = select(StaffNote).where(
-            StaffNote.guild_id == guild_id, StaffNote.user_id == user_id,
-        ).order_by(StaffNote.created_at.desc())
-        result = await session.execute(stmt)
-        return list(result.scalars().all())
-
-
-async def delete_staff_note(note_id: int) -> bool:
-    async with get_session() as session:
-        entry = await session.get(StaffNote, note_id)
-        if entry is None:
-            return False
-        await session.delete(entry)
-        await session.commit()
-        return True
-
-
 # ---------- Werbung/Partner-System ----------
 
 async def get_ad_channel(guild_id: int) -> int:
@@ -1858,5 +1835,763 @@ async def remove_shop_item(item_id: int) -> bool:
         if item is None:
             return False
         await session.delete(item)
+        await session.commit()
+        return True
+
+
+# ---------- Willkommen / Abschied ----------
+
+async def get_welcome_config(guild_id: int) -> WelcomeConfig:
+    async with get_session() as session:
+        cfg = await session.get(WelcomeConfig, guild_id)
+        if cfg is None:
+            cfg = WelcomeConfig(guild_id=guild_id)
+            session.add(cfg)
+            await session.commit()
+            await session.refresh(cfg)
+        return cfg
+
+
+async def set_welcome_config(
+    guild_id: int, *, welcome_channel_id: int | None = None, welcome_message: str | None = None,
+    leave_channel_id: int | None = None, leave_message: str | None = None,
+) -> None:
+    async with get_session() as session:
+        cfg = await session.get(WelcomeConfig, guild_id)
+        if cfg is None:
+            cfg = WelcomeConfig(guild_id=guild_id)
+            session.add(cfg)
+        if welcome_channel_id is not None:
+            cfg.welcome_channel_id = welcome_channel_id
+        if welcome_message is not None:
+            cfg.welcome_message = welcome_message
+        if leave_channel_id is not None:
+            cfg.leave_channel_id = leave_channel_id
+        if leave_message is not None:
+            cfg.leave_message = leave_message
+        await session.commit()
+
+
+# ---------- Zeit-Autorole ----------
+
+async def add_timed_autorole(guild_id: int, role_id: int, days_required: int) -> TimedAutorole:
+    async with get_session() as session:
+        entry = TimedAutorole(guild_id=guild_id, role_id=role_id, days_required=days_required)
+        session.add(entry)
+        await session.commit()
+        await session.refresh(entry)
+        return entry
+
+
+async def get_timed_autoroles(guild_id: int) -> list[TimedAutorole]:
+    async with get_session() as session:
+        stmt = select(TimedAutorole).where(TimedAutorole.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_all_timed_autoroles() -> list[TimedAutorole]:
+    """Für die bot-seitige Hintergrundschleife -- alle Server auf einmal."""
+    async with get_session() as session:
+        result = await session.execute(select(TimedAutorole))
+        return list(result.scalars().all())
+
+
+async def remove_timed_autorole(entry_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(TimedAutorole, entry_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Verifizierungs-System ----------
+
+async def get_verification_config(guild_id: int) -> VerificationConfig:
+    async with get_session() as session:
+        cfg = await session.get(VerificationConfig, guild_id)
+        if cfg is None:
+            cfg = VerificationConfig(guild_id=guild_id)
+            session.add(cfg)
+            await session.commit()
+            await session.refresh(cfg)
+        return cfg
+
+
+async def set_verification_config(
+    guild_id: int, *, enabled: bool | None = None, channel_id: int | None = None,
+    verified_role_id: int | None = None,
+) -> None:
+    async with get_session() as session:
+        cfg = await session.get(VerificationConfig, guild_id)
+        if cfg is None:
+            cfg = VerificationConfig(guild_id=guild_id)
+            session.add(cfg)
+        if enabled is not None:
+            cfg.enabled = enabled
+        if channel_id is not None:
+            cfg.channel_id = channel_id
+        if verified_role_id is not None:
+            cfg.verified_role_id = verified_role_id
+        await session.commit()
+
+
+# ---------- Umfragen ----------
+
+async def create_poll(guild_id: int, channel_id: int, question: str, options: list[str], created_by: int) -> Poll:
+    async with get_session() as session:
+        poll = Poll(guild_id=guild_id, channel_id=channel_id, question=question,
+                     options_json=_json.dumps(options), created_by=created_by)
+        session.add(poll)
+        await session.commit()
+        await session.refresh(poll)
+        return poll
+
+
+async def set_poll_message_id(poll_id: int, message_id: int) -> None:
+    async with get_session() as session:
+        poll = await session.get(Poll, poll_id)
+        if poll:
+            poll.message_id = message_id
+            await session.commit()
+
+
+async def get_poll(poll_id: int) -> Poll | None:
+    async with get_session() as session:
+        return await session.get(Poll, poll_id)
+
+
+async def cast_poll_vote(poll_id: int, user_id: int, option_index: int) -> None:
+    async with get_session() as session:
+        stmt = select(PollVote).where(PollVote.poll_id == poll_id, PollVote.user_id == user_id)
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            existing.option_index = option_index
+        else:
+            session.add(PollVote(poll_id=poll_id, user_id=user_id, option_index=option_index))
+        await session.commit()
+
+
+async def get_poll_results(poll_id: int) -> dict[int, int]:
+    """Gibt {options_index: anzahl_stimmen} zurück."""
+    async with get_session() as session:
+        stmt = select(PollVote).where(PollVote.poll_id == poll_id)
+        votes = (await session.execute(stmt)).scalars().all()
+        counts: dict[int, int] = {}
+        for v in votes:
+            counts[v.option_index] = counts.get(v.option_index, 0) + 1
+        return counts
+
+
+async def close_poll(poll_id: int) -> None:
+    async with get_session() as session:
+        poll = await session.get(Poll, poll_id)
+        if poll:
+            poll.closed = True
+            await session.commit()
+
+
+async def get_polls(guild_id: int, limit: int = 20) -> list[Poll]:
+    async with get_session() as session:
+        stmt = select(Poll).where(Poll.guild_id == guild_id).order_by(Poll.created_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Sticky Messages ----------
+
+async def set_sticky_message(channel_id: int, guild_id: int, content: str) -> None:
+    async with get_session() as session:
+        entry = await session.get(StickyMessage, channel_id)
+        if entry is None:
+            entry = StickyMessage(channel_id=channel_id, guild_id=guild_id, content=content)
+            session.add(entry)
+        else:
+            entry.content = content
+        await session.commit()
+
+
+async def get_sticky_message(channel_id: int) -> StickyMessage | None:
+    async with get_session() as session:
+        return await session.get(StickyMessage, channel_id)
+
+
+async def update_sticky_last_message_id(channel_id: int, message_id: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(StickyMessage, channel_id)
+        if entry:
+            entry.last_message_id = message_id
+            await session.commit()
+
+
+async def remove_sticky_message(channel_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(StickyMessage, channel_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+async def get_sticky_messages_for_guild(guild_id: int) -> list[StickyMessage]:
+    async with get_session() as session:
+        stmt = select(StickyMessage).where(StickyMessage.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Wortfilter ----------
+
+async def add_banned_word(guild_id: int, word: str) -> BannedWord:
+    async with get_session() as session:
+        entry = BannedWord(guild_id=guild_id, word=word.lower())
+        session.add(entry)
+        await session.commit()
+        await session.refresh(entry)
+        return entry
+
+
+async def get_banned_words(guild_id: int) -> list[BannedWord]:
+    async with get_session() as session:
+        stmt = select(BannedWord).where(BannedWord.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def remove_banned_word(entry_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(BannedWord, entry_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Voice-Aktivitäts-Tracking ----------
+
+async def get_voice_time(guild_id: int, user_id: int) -> int:
+    """Gezielte Abfrage für einen einzelnen User -- effizienter als
+    get_voice_leaderboard() mit hohem Limit, wenn nur EIN Wert gebraucht wird."""
+    async with get_session() as session:
+        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id, VoiceTime.user_id == user_id)
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        return entry.total_seconds if entry else 0
+
+
+async def add_voice_time(guild_id: int, user_id: int, seconds: int) -> None:
+    async with get_session() as session:
+        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id, VoiceTime.user_id == user_id)
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = VoiceTime(guild_id=guild_id, user_id=user_id, total_seconds=seconds)
+            session.add(entry)
+        else:
+            entry.total_seconds += seconds
+        await session.commit()
+
+
+async def get_voice_leaderboard(guild_id: int, limit: int = 10) -> list[VoiceTime]:
+    async with get_session() as session:
+        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id).order_by(
+            VoiceTime.total_seconds.desc()
+        ).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Server-Backup (Snapshot) ----------
+
+async def create_server_backup(guild_id: int, snapshot: dict, created_by: int) -> ServerBackup:
+    async with get_session() as session:
+        backup = ServerBackup(guild_id=guild_id, snapshot_json=_json.dumps(snapshot), created_by=created_by)
+        session.add(backup)
+        await session.commit()
+        await session.refresh(backup)
+        return backup
+
+
+async def get_server_backups(guild_id: int) -> list[ServerBackup]:
+    async with get_session() as session:
+        stmt = select(ServerBackup).where(ServerBackup.guild_id == guild_id).order_by(
+            ServerBackup.created_at.desc()
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_server_backup(backup_id: int) -> ServerBackup | None:
+    async with get_session() as session:
+        return await session.get(ServerBackup, backup_id)
+
+
+# ---------- Event-Ankündigungen ----------
+
+async def create_scheduled_event(
+    guild_id: int, channel_id: int, title: str, description: str,
+    event_time, created_by: int,
+) -> ScheduledEvent:
+    async with get_session() as session:
+        event = ScheduledEvent(guild_id=guild_id, channel_id=channel_id, title=title,
+                                description=description, event_time=event_time, created_by=created_by)
+        session.add(event)
+        await session.commit()
+        await session.refresh(event)
+        return event
+
+
+async def get_upcoming_events(guild_id: int) -> list[ScheduledEvent]:
+    async with get_session() as session:
+        stmt = select(ScheduledEvent).where(
+            ScheduledEvent.guild_id == guild_id, ScheduledEvent.announced == False,  # noqa: E712
+        ).order_by(ScheduledEvent.event_time.asc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_due_events(now) -> list[ScheduledEvent]:
+    """Für die bot-seitige Hintergrundschleife -- alle Server auf einmal."""
+    async with get_session() as session:
+        stmt = select(ScheduledEvent).where(
+            ScheduledEvent.event_time <= now, ScheduledEvent.announced == False,  # noqa: E712
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def mark_event_announced(event_id: int) -> None:
+    async with get_session() as session:
+        event = await session.get(ScheduledEvent, event_id)
+        if event:
+            event.announced = True
+            await session.commit()
+
+
+async def remove_scheduled_event(event_id: int) -> bool:
+    async with get_session() as session:
+        event = await session.get(ScheduledEvent, event_id)
+        if event is None:
+            return False
+        await session.delete(event)
+        await session.commit()
+        return True
+
+
+# ---------- Audit-Log (Dashboard) ----------
+
+async def log_dashboard_action(guild_id: int, dashboard_user_id: int, dashboard_username: str, action: str) -> None:
+    async with get_session() as session:
+        entry = DashboardAuditLog(
+            guild_id=guild_id, dashboard_user_id=dashboard_user_id,
+            dashboard_username=dashboard_username, action=action,
+        )
+        session.add(entry)
+        await session.commit()
+
+
+async def get_dashboard_audit_log(guild_id: int, limit: int = 50) -> list[DashboardAuditLog]:
+    async with get_session() as session:
+        stmt = select(DashboardAuditLog).where(DashboardAuditLog.guild_id == guild_id).order_by(
+            DashboardAuditLog.created_at.desc()
+        ).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Server-Aktivitätsstatistik ----------
+
+async def increment_daily_activity(guild_id: int, date_str: str, *, messages: int = 0, joins: int = 0) -> None:
+    async with get_session() as session:
+        stmt = select(DailyActivity).where(DailyActivity.guild_id == guild_id, DailyActivity.date == date_str)
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = DailyActivity(guild_id=guild_id, date=date_str, message_count=messages, join_count=joins)
+            session.add(entry)
+        else:
+            entry.message_count += messages
+            entry.join_count += joins
+        await session.commit()
+
+
+async def get_daily_activity(guild_id: int, days: int = 14) -> list[DailyActivity]:
+    async with get_session() as session:
+        stmt = select(DailyActivity).where(DailyActivity.guild_id == guild_id).order_by(
+            DailyActivity.date.desc()
+        ).limit(days)
+        result = await session.execute(stmt)
+        return list(reversed(result.scalars().all()))
+
+
+# ---------- Globale Sperrliste ----------
+
+async def add_to_global_blocklist(user_id: int, reason: str, blocked_by: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(GlobalBlocklist, user_id)
+        if entry is None:
+            entry = GlobalBlocklist(user_id=user_id, reason=reason, blocked_by=blocked_by)
+            session.add(entry)
+        else:
+            entry.reason = reason
+        await session.commit()
+
+
+async def remove_from_global_blocklist(user_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(GlobalBlocklist, user_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+async def is_globally_blocked(user_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(GlobalBlocklist, user_id)
+        return entry is not None
+
+
+async def get_global_blocklist() -> list[GlobalBlocklist]:
+    async with get_session() as session:
+        result = await session.execute(select(GlobalBlocklist))
+        return list(result.scalars().all())
+
+
+# ---------- Admin-Login-Historie ----------
+
+async def log_admin_login(admin_user_id: int, username: str, success: bool, ip_address: str = "") -> None:
+    async with get_session() as session:
+        entry = AdminLoginHistory(admin_user_id=admin_user_id, username=username,
+                                   success=success, ip_address=ip_address)
+        session.add(entry)
+        await session.commit()
+
+
+async def get_admin_login_history(limit: int = 100) -> list[AdminLoginHistory]:
+    async with get_session() as session:
+        stmt = select(AdminLoginHistory).order_by(AdminLoginHistory.created_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Admin-2FA (TOTP) ----------
+
+async def set_admin_totp_secret(admin_id: int, secret: str) -> None:
+    async with get_session() as session:
+        admin = await session.get(AdminUser, admin_id)
+        if admin:
+            admin.totp_secret = secret
+            await session.commit()
+
+
+async def set_admin_totp_enabled(admin_id: int, enabled: bool) -> None:
+    async with get_session() as session:
+        admin = await session.get(AdminUser, admin_id)
+        if admin:
+            admin.totp_enabled = enabled
+            await session.commit()
+
+
+# ---------- Fehlerprotokoll ----------
+
+async def log_error(guild_id: int, command_name: str, error_text: str) -> None:
+    async with get_session() as session:
+        entry = ErrorLog(guild_id=guild_id, command_name=command_name, error_text=error_text[:4000])
+        session.add(entry)
+        await session.commit()
+
+
+async def get_error_logs(limit: int = 100) -> list[ErrorLog]:
+    async with get_session() as session:
+        stmt = select(ErrorLog).order_by(ErrorLog.created_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- API-Fehlerquote ----------
+
+async def record_api_call(date_str: str, success: bool) -> None:
+    async with get_session() as session:
+        stmt = select(ApiCallStat).where(ApiCallStat.date == date_str)
+        entry = (await session.execute(stmt)).scalar_one_or_none()
+        if entry is None:
+            entry = ApiCallStat(date=date_str, success_count=1 if success else 0,
+                                 failure_count=0 if success else 1)
+            session.add(entry)
+        else:
+            if success:
+                entry.success_count += 1
+            else:
+                entry.failure_count += 1
+        await session.commit()
+
+
+async def get_api_call_stats(days: int = 14) -> list[ApiCallStat]:
+    async with get_session() as session:
+        stmt = select(ApiCallStat).order_by(ApiCallStat.date.desc()).limit(days)
+        result = await session.execute(stmt)
+        return list(reversed(result.scalars().all()))
+
+
+# ---------- Server-Tags ----------
+
+async def add_guild_tag(guild_id: int, tag: str) -> None:
+    async with get_session() as session:
+        session.add(GuildTag(guild_id=guild_id, tag=tag))
+        await session.commit()
+
+
+async def get_guild_tags(guild_id: int) -> list[GuildTag]:
+    async with get_session() as session:
+        stmt = select(GuildTag).where(GuildTag.guild_id == guild_id)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_all_guild_tags() -> list[GuildTag]:
+    async with get_session() as session:
+        result = await session.execute(select(GuildTag))
+        return list(result.scalars().all())
+
+
+async def remove_guild_tag(tag_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(GuildTag, tag_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Interne Server-Notizen ----------
+
+async def add_guild_admin_note(guild_id: int, note: str, created_by: int) -> None:
+    async with get_session() as session:
+        session.add(GuildAdminNote(guild_id=guild_id, note=note, created_by=created_by))
+        await session.commit()
+
+
+async def get_guild_admin_notes(guild_id: int) -> list[GuildAdminNote]:
+    async with get_session() as session:
+        stmt = select(GuildAdminNote).where(GuildAdminNote.guild_id == guild_id).order_by(
+            GuildAdminNote.created_at.desc()
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def delete_guild_admin_note(note_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(GuildAdminNote, note_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Changelog ----------
+
+async def add_changelog_entry(version: str, description: str) -> None:
+    async with get_session() as session:
+        session.add(ChangelogEntry(version=version, description=description))
+        await session.commit()
+
+
+async def get_changelog_entries(limit: int = 30) -> list[ChangelogEntry]:
+    async with get_session() as session:
+        stmt = select(ChangelogEntry).order_by(ChangelogEntry.created_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def delete_changelog_entry(entry_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(ChangelogEntry, entry_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Feature-Flags ----------
+
+async def set_feature_flag(key: str, enabled: bool) -> None:
+    async with get_session() as session:
+        flag = await session.get(FeatureFlag, key)
+        if flag is None:
+            flag = FeatureFlag(key=key, enabled=enabled)
+            session.add(flag)
+        else:
+            flag.enabled = enabled
+        await session.commit()
+
+
+async def get_feature_flags() -> list[FeatureFlag]:
+    async with get_session() as session:
+        result = await session.execute(select(FeatureFlag))
+        return list(result.scalars().all())
+
+
+async def is_feature_enabled(key: str, default: bool = True) -> bool:
+    async with get_session() as session:
+        flag = await session.get(FeatureFlag, key)
+        return flag.enabled if flag else default
+
+
+# ---------- Feedback ----------
+
+async def create_feedback(dashboard_user_id: int, username: str, message: str) -> None:
+    async with get_session() as session:
+        session.add(Feedback(dashboard_user_id=dashboard_user_id, username=username, message=message))
+        await session.commit()
+
+
+async def get_feedback_entries(status: str | None = None) -> list[Feedback]:
+    async with get_session() as session:
+        stmt = select(Feedback)
+        if status:
+            stmt = stmt.where(Feedback.status == status)
+        stmt = stmt.order_by(Feedback.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def update_feedback_status(feedback_id: int, status: str) -> None:
+    async with get_session() as session:
+        entry = await session.get(Feedback, feedback_id)
+        if entry:
+            entry.status = status
+            await session.commit()
+
+
+# ---------- Geplanter Wartungsmodus ----------
+
+async def create_scheduled_maintenance(start_time, end_time, reason: str) -> None:
+    async with get_session() as session:
+        session.add(ScheduledMaintenance(start_time=start_time, end_time=end_time, reason=reason))
+        await session.commit()
+
+
+async def get_scheduled_maintenances() -> list[ScheduledMaintenance]:
+    async with get_session() as session:
+        stmt = select(ScheduledMaintenance).where(ScheduledMaintenance.reverted == False)  # noqa: E712
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_due_maintenance_starts(now) -> list[ScheduledMaintenance]:
+    async with get_session() as session:
+        stmt = select(ScheduledMaintenance).where(
+            ScheduledMaintenance.start_time <= now, ScheduledMaintenance.applied == False,  # noqa: E712
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_due_maintenance_ends(now) -> list[ScheduledMaintenance]:
+    async with get_session() as session:
+        stmt = select(ScheduledMaintenance).where(
+            ScheduledMaintenance.end_time <= now, ScheduledMaintenance.applied == True,  # noqa: E712
+            ScheduledMaintenance.reverted == False,  # noqa: E712
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def mark_maintenance_applied(entry_id: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(ScheduledMaintenance, entry_id)
+        if entry:
+            entry.applied = True
+            await session.commit()
+
+
+async def mark_maintenance_reverted(entry_id: int) -> None:
+    async with get_session() as session:
+        entry = await session.get(ScheduledMaintenance, entry_id)
+        if entry:
+            entry.reverted = True
+            await session.commit()
+
+
+# ---------- Rollen-Vorlagen ----------
+
+async def create_role_template(name: str, roles: list[dict], created_by: int) -> RoleTemplate:
+    import json as _json_rt
+    async with get_session() as session:
+        template = RoleTemplate(name=name, roles_json=_json_rt.dumps(roles), created_by=created_by)
+        session.add(template)
+        await session.commit()
+        await session.refresh(template)
+        return template
+
+
+async def get_role_templates() -> list[RoleTemplate]:
+    async with get_session() as session:
+        result = await session.execute(select(RoleTemplate))
+        return list(result.scalars().all())
+
+
+async def get_role_template(template_id: int) -> RoleTemplate | None:
+    async with get_session() as session:
+        return await session.get(RoleTemplate, template_id)
+
+
+async def delete_role_template(template_id: int) -> bool:
+    async with get_session() as session:
+        entry = await session.get(RoleTemplate, template_id)
+        if entry is None:
+            return False
+        await session.delete(entry)
+        await session.commit()
+        return True
+
+
+# ---------- Backup-Gesamtübersicht (alle Server) ----------
+
+async def get_all_server_backups() -> list[ServerBackup]:
+    async with get_session() as session:
+        stmt = select(ServerBackup).order_by(ServerBackup.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------- Ticket-Panels (neu, vereinfacht) ----------
+
+async def create_ticket_panel(guild_id: int, name: str, description: str, color: str,
+                               category_id: int, created_by: int) -> TicketPanel:
+    async with get_session() as session:
+        panel = TicketPanel(guild_id=guild_id, name=name, description=description,
+                             color=color, category_id=category_id, created_by=created_by)
+        session.add(panel)
+        await session.commit()
+        await session.refresh(panel)
+        return panel
+
+
+async def get_ticket_panels(guild_id: int) -> list[TicketPanel]:
+    async with get_session() as session:
+        stmt = select(TicketPanel).where(TicketPanel.guild_id == guild_id).order_by(TicketPanel.created_at.desc())
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def get_ticket_panel(panel_id: int) -> TicketPanel | None:
+    async with get_session() as session:
+        return await session.get(TicketPanel, panel_id)
+
+
+async def delete_ticket_panel(panel_id: int) -> bool:
+    async with get_session() as session:
+        panel = await session.get(TicketPanel, panel_id)
+        if panel is None:
+            return False
+        await session.delete(panel)
         await session.commit()
         return True

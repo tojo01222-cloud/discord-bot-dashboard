@@ -1,132 +1,141 @@
 """
-Strafregister-System.
+Anti-Spam-System.
 
-- /strafregister <user>                    -- zeigt ALLE Strafen eines Users (Team/Moderator/Admin
-                                               ODER eine per /strafregister_recht_geben freigeschaltete Rolle)
-- /strafregister_recht_geben <rolle>       -- gibt einer Rolle Einsicht ins Strafregister (SERVER_ADMIN)
-- /strafregister_recht_entfernen <rolle>   -- entzieht einer Rolle die Einsicht (SERVER_ADMIN)
-- /strafregister_rechte                    -- zeigt, welche Rollen zusätzlich Einsicht haben
-
-Nutzt dieselbe Punishment-Tabelle, die schon von /kick, /ban, /timeout, /warn,
-Anti-Nuke, Anti-Spam, Anti-Hack und Anti-Werbung befüllt wird -- das
-Strafregister ist also automatisch vollständig, ohne doppelte Datenhaltung.
-Seit dieser Version ist bei JEDER Strafe ein Grund PFLICHT (siehe moderation.py
-und team_management.py), damit das Strafregister immer aussagekräftig bleibt.
+Zählt Nachrichten pro User in einem kurzen Zeitfenster. Wird der Schwellenwert
+überschritten, werden die letzten Spam-Nachrichten gelöscht und der User kurz
+in Timeout gesetzt. Zähler liegen im Arbeitsspeicher (siehe anti_nuke.py für
+die Begründung).
 """
+from __future__ import annotations
+
+import datetime as dt
+import logging
+from collections import defaultdict, deque
+
 import discord
-from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.permissions import require_level, PermissionLevel, get_member_permission_level
-from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.config import config
+from bot.utils.permissions import require_level, PermissionLevel
+from bot.utils.embeds import success_embed, base_embed
 from bot.utils.i18n import t
 from bot.utils.db_helpers import (
     get_guild_language,
-    get_user_punishments,
-    grant_register_access,
-    revoke_register_access,
-    get_register_access_roles,
+    get_security_settings,
+    set_anti_spam_enabled,
+    is_trusted_user,
+    log_punishment,
 )
 
-# Menschenlesbare Labels für die Strafentypen im Register (technische
-# type-Strings aus der Punishment-Tabelle -> Anzeigename).
-TYPE_LABELS = {
-    "kick": "Kick",
-    "ban": "Ban",
-    "timeout": "Timeout",
-    "warn": "Verwarnung",
-    "team_warn": "Team-Verwarnung",
-    "team_kick": "Team-Kick",
-    "anti_nuke_action": "Anti-Nuke",
-    "anti_spam_timeout": "Anti-Spam",
-    "anti_hack_kick": "Anti-Hack",
-    "anti_werbung_timeout": "Anti-Werbung (Timeout)",
-    "anti_werbung_kick": "Anti-Werbung (Kick)",
-}
+log = logging.getLogger("bot.anti_spam")
+
+THRESHOLD_COUNT = 5
+THRESHOLD_WINDOW_SECONDS = 6
+TIMEOUT_SECONDS = 300  # 5 Minuten
 
 
-async def _has_register_access(member: discord.Member) -> bool:
-    if get_member_permission_level(member) >= PermissionLevel.TEAM:
-        return True
-    access_roles = {r.role_id for r in await get_register_access_roles(member.guild.id)}
-    return any(role.id in access_roles for role in member.roles)
-
-
-class Strafregister(commands.Cog):
+class AntiSpam(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # guild_id -> user_id -> deque[(timestamp, message)]
+        self._message_log: dict[int, dict[int, deque]] = defaultdict(lambda: defaultdict(deque))
+        self._punishing: set[tuple[int, int]] = set()
 
-    @commands.hybrid_command(name="strafregister", description="Zeigt das vollständige Strafregister eines Users.")
-    @app_commands.describe(member="Das Mitglied")
-    @commands.guild_only()
-    async def strafregister(self, ctx: commands.Context, member: discord.Member):
-        lang = await get_guild_language(ctx.guild.id)
-
-        if not isinstance(ctx.author, discord.Member) or not await _has_register_access(ctx.author):
-            await ctx.send(embed=error_embed(t("strafregister.no_access", lang)), ephemeral=True)
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+        if not isinstance(message.author, discord.Member):
             return
 
-        entries = await get_user_punishments(ctx.guild.id, member.id, active_only=False)
-        if not entries:
-            await ctx.send(embed=error_embed(t("strafregister.empty", lang, user=member.display_name)))
+        _, spam_enabled = await get_security_settings(message.guild.id)
+        if not spam_enabled:
+            return
+        if message.author.id == config.BOT_OWNER_ID or message.author.id == message.guild.owner_id:
+            return
+        if await is_trusted_user(message.guild.id, message.author.id):
+            return
+        if message.author.guild_permissions.administrator:
             return
 
-        embed = base_embed(t("strafregister.title", lang, user=member.display_name))
-        embed.set_thumbnail(url=member.display_avatar.url)
-        for entry in entries[:25]:  # Discord-Embed-Feld-Limit
-            label = TYPE_LABELS.get(entry.type, entry.type)
-            status = "" if entry.active else (" (aufgehoben)" if lang == "de" else " (revoked)")
-            embed.add_field(
-                name=f"#{entry.id} — {label}{status} — {entry.created_at.strftime('%d.%m.%Y %H:%M')}",
-                value=f"Grund: {entry.reason}\nModerator: <@{entry.moderator_id}>" if lang == "de"
-                else f"Reason: {entry.reason}\nModerator: <@{entry.moderator_id}>",
-                inline=False,
-            )
-        embed.set_footer(text=f"{len(entries)} Einträge insgesamt" if lang == "de"
-                          else f"{len(entries)} entries total")
-        await ctx.send(embed=embed)
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        bucket = self._message_log[message.guild.id][message.author.id]
+        bucket.append((now, message))
+        while bucket and now - bucket[0][0] > THRESHOLD_WINDOW_SECONDS:
+            bucket.popleft()
 
-    @commands.hybrid_command(name="strafregister_recht_geben",
-                              description="Gibt einer Rolle Einsicht ins Strafregister.")
-    @app_commands.describe(rolle="Die Rolle, die Einsicht bekommen soll")
+        if len(bucket) >= THRESHOLD_COUNT:
+            messages_to_delete = [m for _, m in bucket]
+            bucket.clear()
+            await self._punish(message.guild, message.author, message.channel, messages_to_delete)
+
+    async def _punish(self, guild: discord.Guild, member: discord.Member,
+                       channel: discord.abc.Messageable, messages: list[discord.Message]) -> None:
+        key = (guild.id, member.id)
+        if key in self._punishing:
+            return
+        self._punishing.add(key)
+        try:
+            lang = await get_guild_language(guild.id)
+
+            # Nachrichten löschen (bulk_delete nur für Textkanäle mit <14 Tage alten Nachrichten)
+            if isinstance(channel, discord.TextChannel):
+                try:
+                    await channel.delete_messages(messages)
+                except (discord.Forbidden, discord.HTTPException):
+                    for m in messages:
+                        try:
+                            await m.delete()
+                        except discord.HTTPException:
+                            pass
+
+            try:
+                await member.timeout(dt.timedelta(seconds=TIMEOUT_SECONDS), reason="Anti-Spam: zu viele Nachrichten")
+            except discord.Forbidden:
+                log.warning("Konnte %s in Guild %s nicht timeouten (fehlende Berechtigung).", member.id, guild.id)
+
+            await log_punishment(guild.id, member.id, self.bot.user.id, "anti_spam_timeout",
+                                  "Automatisch: zu viele Nachrichten in kurzer Zeit")
+
+            embed = base_embed(t("security.nuke_alert_title", lang))
+            embed.title = "🚨 Anti-Spam ausgelöst" if lang == "de" else "🚨 Anti-spam triggered"
+            embed.color = discord.Color.orange()
+            embed.description = t("security.spam_alert_desc", lang, user=member.mention)
+
+            from bot.database.db import get_session
+            from bot.database.models import GuildSettings
+            async with get_session() as session:
+                settings = await session.get(GuildSettings, guild.id)
+                log_channel_id = settings.mod_log_channel_id if settings else 0
+            if log_channel_id:
+                log_channel = guild.get_channel(log_channel_id)
+                if log_channel:
+                    await log_channel.send(embed=embed)
+        finally:
+            self._punishing.discard(key)
+
+    # ---------- Commands ----------
+
+    @commands.hybrid_group(name="antispam", description="Anti-Spam-System verwalten.")
     @commands.guild_only()
+    async def antispam(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @antispam.command(name="on", description="Aktiviert das Anti-Spam-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def strafregister_recht_geben(self, ctx: commands.Context, rolle: discord.Role):
+    async def antispam_on(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        granted = await grant_register_access(ctx.guild.id, rolle.id, ctx.author.id)
-        if granted:
-            await ctx.send(embed=success_embed(t("strafregister.access_granted", lang, role=rolle.mention)))
-        else:
-            await ctx.send(embed=error_embed(t("strafregister.access_already", lang, role=rolle.mention)))
+        await set_anti_spam_enabled(ctx.guild.id, True)
+        await ctx.send(embed=success_embed(t("security.antispam_enabled", lang)))
 
-    @commands.hybrid_command(name="strafregister_recht_entfernen",
-                              description="Entzieht einer Rolle die Einsicht ins Strafregister.")
-    @app_commands.describe(rolle="Die Rolle, der die Einsicht entzogen wird")
-    @commands.guild_only()
+    @antispam.command(name="off", description="Deaktiviert das Anti-Spam-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def strafregister_recht_entfernen(self, ctx: commands.Context, rolle: discord.Role):
+    async def antispam_off(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        revoked = await revoke_register_access(ctx.guild.id, rolle.id)
-        if revoked:
-            await ctx.send(embed=success_embed(t("strafregister.access_revoked", lang, role=rolle.mention)))
-        else:
-            await ctx.send(embed=error_embed(t("strafregister.access_not_found", lang, role=rolle.mention)))
-
-    @commands.hybrid_command(name="strafregister_rechte",
-                              description="Zeigt, welche Rollen zusätzlich Einsicht ins Strafregister haben.")
-    @commands.guild_only()
-    async def strafregister_rechte(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        roles = await get_register_access_roles(ctx.guild.id)
-        if not roles:
-            await ctx.send(embed=error_embed(t("strafregister.access_list_empty", lang)))
-            return
-
-        embed = base_embed(t("strafregister.access_list_title", lang))
-        lines = [f"<@&{r.role_id}>" for r in roles]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
+        await set_anti_spam_enabled(ctx.guild.id, False)
+        await ctx.send(embed=success_embed(t("security.antispam_disabled", lang)))
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Strafregister(bot))
+    await bot.add_cog(AntiSpam(bot))

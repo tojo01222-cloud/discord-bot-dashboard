@@ -1,190 +1,132 @@
 """
-Economy-System.
+Strafregister-System.
 
-- /balance [user]                      -- zeigt den Kontostand
-- /daily                                -- holt die tägliche Belohnung ab (24h Cooldown)
-- /pay <user> <betrag>                   -- überweist Coins an einen anderen User
-- /leaderboard_economy                    -- Top 10 nach Kontostand
-- /shop liste                              -- zeigt kaufbare Items
-- /shop kaufen <item_id>                    -- kauft ein Item (vergibt ggf. automatisch eine Rolle)
-- /shop add <name> <preis> [rolle]           -- fügt ein Item hinzu (SERVER_ADMIN)
-- /shop remove <item_id>                      -- entfernt ein Item (SERVER_ADMIN)
+- /strafregister <user>                    -- zeigt ALLE Strafen eines Users (Team/Moderator/Admin
+                                               ODER eine per /strafregister_recht_geben freigeschaltete Rolle)
+- /strafregister_recht_geben <rolle>       -- gibt einer Rolle Einsicht ins Strafregister (SERVER_ADMIN)
+- /strafregister_recht_entfernen <rolle>   -- entzieht einer Rolle die Einsicht (SERVER_ADMIN)
+- /strafregister_rechte                    -- zeigt, welche Rollen zusätzlich Einsicht haben
 
-Bewusst komplett unabhängig vom Level-/XP-System (bot/cogs/level.py) --
-zwei getrennte "Währungen", damit Server sich aussuchen können, welches
-System sie nutzen wollen, ohne dass beide sich gegenseitig beeinflussen.
+Nutzt dieselbe Punishment-Tabelle, die schon von /kick, /ban, /timeout, /warn,
+Anti-Nuke, Anti-Spam, Anti-Hack und Anti-Werbung befüllt wird -- das
+Strafregister ist also automatisch vollständig, ohne doppelte Datenhaltung.
+Seit dieser Version ist bei JEDER Strafe ein Grund PFLICHT (siehe moderation.py
+und team_management.py), damit das Strafregister immer aussagekräftig bleibt.
 """
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.permissions import require_level, PermissionLevel
+from bot.utils.permissions import require_level, PermissionLevel, get_member_permission_level
 from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.i18n import t
 from bot.utils.db_helpers import (
     get_guild_language,
-    get_balance,
-    add_balance,
-    claim_daily,
-    get_economy_leaderboard,
-    add_shop_item,
-    get_shop_items,
-    get_shop_item,
-    remove_shop_item,
+    get_user_punishments,
+    grant_register_access,
+    revoke_register_access,
+    get_register_access_roles,
 )
 
-DAILY_AMOUNT = 100
+# Menschenlesbare Labels für die Strafentypen im Register (technische
+# type-Strings aus der Punishment-Tabelle -> Anzeigename).
+TYPE_LABELS = {
+    "kick": "Kick",
+    "ban": "Ban",
+    "timeout": "Timeout",
+    "warn": "Verwarnung",
+    "team_warn": "Team-Verwarnung",
+    "team_kick": "Team-Kick",
+    "anti_nuke_action": "Anti-Nuke",
+    "anti_spam_timeout": "Anti-Spam",
+    "anti_hack_kick": "Anti-Hack",
+    "anti_werbung_timeout": "Anti-Werbung (Timeout)",
+    "anti_werbung_kick": "Anti-Werbung (Kick)",
+}
 
 
-class Economy(commands.Cog):
+async def _has_register_access(member: discord.Member) -> bool:
+    if get_member_permission_level(member) >= PermissionLevel.TEAM:
+        return True
+    access_roles = {r.role_id for r in await get_register_access_roles(member.guild.id)}
+    return any(role.id in access_roles for role in member.roles)
+
+
+class Strafregister(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="balance", description="Zeigt deinen Kontostand (oder den eines anderen Users).")
-    @app_commands.describe(member="Optional: ein anderer User")
+    @commands.hybrid_command(name="strafregister", description="Zeigt das vollständige Strafregister eines Users.")
+    @app_commands.describe(member="Das Mitglied")
     @commands.guild_only()
-    async def balance(self, ctx: commands.Context, member: discord.Member = None):
+    async def strafregister(self, ctx: commands.Context, member: discord.Member):
         lang = await get_guild_language(ctx.guild.id)
-        target = member or ctx.author
-        entry = await get_balance(ctx.guild.id, target.id)
-        embed = base_embed(f"💰 {target.display_name}", f"**{entry.balance}** Coins" if lang == "de"
-                            else f"**{entry.balance}** coins")
+
+        if not isinstance(ctx.author, discord.Member) or not await _has_register_access(ctx.author):
+            await ctx.send(embed=error_embed(t("strafregister.no_access", lang)), ephemeral=True)
+            return
+
+        entries = await get_user_punishments(ctx.guild.id, member.id, active_only=False)
+        if not entries:
+            await ctx.send(embed=error_embed(t("strafregister.empty", lang, user=member.display_name)))
+            return
+
+        embed = base_embed(t("strafregister.title", lang, user=member.display_name))
+        embed.set_thumbnail(url=member.display_avatar.url)
+        for entry in entries[:25]:  # Discord-Embed-Feld-Limit
+            label = TYPE_LABELS.get(entry.type, entry.type)
+            status = "" if entry.active else (" (aufgehoben)" if lang == "de" else " (revoked)")
+            embed.add_field(
+                name=f"#{entry.id} — {label}{status} — {entry.created_at.strftime('%d.%m.%Y %H:%M')}",
+                value=f"Grund: {entry.reason}\nModerator: <@{entry.moderator_id}>" if lang == "de"
+                else f"Reason: {entry.reason}\nModerator: <@{entry.moderator_id}>",
+                inline=False,
+            )
+        embed.set_footer(text=f"{len(entries)} Einträge insgesamt" if lang == "de"
+                          else f"{len(entries)} entries total")
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="daily", description="Holt deine tägliche Belohnung ab.")
+    @commands.hybrid_command(name="strafregister_recht_geben",
+                              description="Gibt einer Rolle Einsicht ins Strafregister.")
+    @app_commands.describe(rolle="Die Rolle, die Einsicht bekommen soll")
     @commands.guild_only()
-    async def daily(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        new_balance = await claim_daily(ctx.guild.id, ctx.author.id, DAILY_AMOUNT)
-        if new_balance is None:
-            await ctx.send(embed=error_embed(
-                "Du hast deine tägliche Belohnung schon abgeholt -- versuch's morgen wieder." if lang == "de"
-                else "You've already claimed your daily reward -- try again tomorrow."), ephemeral=True)
-            return
-
-        await ctx.send(embed=success_embed(
-            f"+{DAILY_AMOUNT} Coins! Neuer Kontostand: {new_balance}." if lang == "de"
-            else f"+{DAILY_AMOUNT} coins! New balance: {new_balance}."))
-
-    @commands.hybrid_command(name="pay", description="Überweist Coins an einen anderen User.")
-    @app_commands.describe(member="Empfänger", betrag="Wie viele Coins")
-    @commands.guild_only()
-    async def pay(self, ctx: commands.Context, member: discord.Member, betrag: int):
-        lang = await get_guild_language(ctx.guild.id)
-        if member.id == ctx.author.id:
-            await ctx.send(embed=error_embed(
-                "Du kannst dir nicht selbst Coins schicken." if lang == "de"
-                else "You can't send coins to yourself."), ephemeral=True)
-            return
-        if betrag <= 0:
-            await ctx.send(embed=error_embed(
-                "Der Betrag muss größer als 0 sein." if lang == "de" else "The amount must be greater than 0."),
-                ephemeral=True)
-            return
-
-        sender_entry = await get_balance(ctx.guild.id, ctx.author.id)
-        if sender_entry.balance < betrag:
-            await ctx.send(embed=error_embed(
-                "Du hast nicht genug Coins." if lang == "de" else "You don't have enough coins."), ephemeral=True)
-            return
-
-        await add_balance(ctx.guild.id, ctx.author.id, -betrag)
-        await add_balance(ctx.guild.id, member.id, betrag)
-        await ctx.send(embed=success_embed(
-            f"{betrag} Coins an {member.mention} überwiesen." if lang == "de"
-            else f"Sent {betrag} coins to {member.mention}."))
-
-    @commands.hybrid_command(name="leaderboard_economy", description="Zeigt die Top 10 nach Kontostand.")
-    @commands.guild_only()
-    async def leaderboard_economy(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        top = await get_economy_leaderboard(ctx.guild.id)
-        if not top:
-            await ctx.send(embed=error_embed("Noch keine Daten." if lang == "de" else "No data yet."))
-            return
-
-        embed = base_embed("💰 Economy-Leaderboard" if lang == "de" else "💰 Economy leaderboard")
-        medals = ["🥇", "🥈", "🥉"]
-        lines = [f"{medals[i] if i < 3 else f'{i+1}.'} <@{e.user_id}> — {e.balance} Coins"
-                 for i, e in enumerate(top)]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_group(name="shop", description="Shop verwalten/nutzen.")
-    @commands.guild_only()
-    async def shop(self, ctx: commands.Context):
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
-
-    @shop.command(name="liste", description="Zeigt alle kaufbaren Items.")
-    async def shop_liste(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        items = await get_shop_items(ctx.guild.id)
-        if not items:
-            await ctx.send(embed=error_embed("Der Shop ist leer." if lang == "de" else "The shop is empty."))
-            return
-
-        embed = base_embed("🛒 Shop")
-        lines = [f"#{i.id} — **{i.name}** — {i.price} Coins" + (f" (Rolle: <@&{i.role_id}>)" if i.role_id else "")
-                 for i in items[:25]]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @shop.command(name="kaufen", description="Kauft ein Item aus dem Shop.")
-    @app_commands.describe(item_id="Die ID aus /shop liste")
-    @commands.guild_only()
-    async def shop_kaufen(self, ctx: commands.Context, item_id: int):
-        lang = await get_guild_language(ctx.guild.id)
-        item = await get_shop_item(item_id)
-        if item is None or item.guild_id != ctx.guild.id:
-            await ctx.send(embed=error_embed("Item nicht gefunden." if lang == "de" else "Item not found."),
-                            ephemeral=True)
-            return
-
-        entry = await get_balance(ctx.guild.id, ctx.author.id)
-        if entry.balance < item.price:
-            await ctx.send(embed=error_embed(
-                "Du hast nicht genug Coins für dieses Item." if lang == "de"
-                else "You don't have enough coins for this item."), ephemeral=True)
-            return
-
-        await add_balance(ctx.guild.id, ctx.author.id, -item.price)
-
-        if item.role_id:
-            role = ctx.guild.get_role(item.role_id)
-            if role:
-                try:
-                    await ctx.author.add_roles(role, reason=f"Shop-Kauf: {item.name}")
-                except discord.Forbidden:
-                    pass
-
-        await ctx.send(embed=success_embed(
-            f"**{item.name}** gekauft!" if lang == "de" else f"Bought **{item.name}**!"))
-
-    @shop.command(name="add", description="Fügt ein Item zum Shop hinzu.")
-    @app_commands.describe(name="Name des Items", preis="Preis in Coins", rolle="Optional: Rolle, die beim Kauf vergeben wird")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def shop_add(self, ctx: commands.Context, name: str, preis: int, rolle: discord.Role = None):
+    async def strafregister_recht_geben(self, ctx: commands.Context, rolle: discord.Role):
         lang = await get_guild_language(ctx.guild.id)
-        if preis <= 0:
-            await ctx.send(embed=error_embed(
-                "Der Preis muss größer als 0 sein." if lang == "de" else "The price must be greater than 0."))
-            return
-        item = await add_shop_item(ctx.guild.id, name, preis, rolle.id if rolle else 0)
-        await ctx.send(embed=success_embed(
-            f"Item **{item.name}** für {preis} Coins hinzugefügt." if lang == "de"
-            else f"Item **{item.name}** added for {preis} coins."))
-
-    @shop.command(name="remove", description="Entfernt ein Item aus dem Shop.")
-    @app_commands.describe(item_id="Die ID aus /shop liste")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def shop_remove(self, ctx: commands.Context, item_id: int):
-        lang = await get_guild_language(ctx.guild.id)
-        ok = await remove_shop_item(item_id)
-        if ok:
-            await ctx.send(embed=success_embed("Entfernt." if lang == "de" else "Removed."))
+        granted = await grant_register_access(ctx.guild.id, rolle.id, ctx.author.id)
+        if granted:
+            await ctx.send(embed=success_embed(t("strafregister.access_granted", lang, role=rolle.mention)))
         else:
-            await ctx.send(embed=error_embed("ID nicht gefunden." if lang == "de" else "ID not found."))
+            await ctx.send(embed=error_embed(t("strafregister.access_already", lang, role=rolle.mention)))
+
+    @commands.hybrid_command(name="strafregister_recht_entfernen",
+                              description="Entzieht einer Rolle die Einsicht ins Strafregister.")
+    @app_commands.describe(rolle="Die Rolle, der die Einsicht entzogen wird")
+    @commands.guild_only()
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def strafregister_recht_entfernen(self, ctx: commands.Context, rolle: discord.Role):
+        lang = await get_guild_language(ctx.guild.id)
+        revoked = await revoke_register_access(ctx.guild.id, rolle.id)
+        if revoked:
+            await ctx.send(embed=success_embed(t("strafregister.access_revoked", lang, role=rolle.mention)))
+        else:
+            await ctx.send(embed=error_embed(t("strafregister.access_not_found", lang, role=rolle.mention)))
+
+    @commands.hybrid_command(name="strafregister_rechte",
+                              description="Zeigt, welche Rollen zusätzlich Einsicht ins Strafregister haben.")
+    @commands.guild_only()
+    async def strafregister_rechte(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        roles = await get_register_access_roles(ctx.guild.id)
+        if not roles:
+            await ctx.send(embed=error_embed(t("strafregister.access_list_empty", lang)))
+            return
+
+        embed = base_embed(t("strafregister.access_list_title", lang))
+        lines = [f"<@&{r.role_id}>" for r in roles]
+        embed.description = "\n".join(lines)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Economy(bot))
+    await bot.add_cog(Strafregister(bot))

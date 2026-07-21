@@ -1,24 +1,22 @@
 """
-Autorole-System.
+Anti-Hack-System.
 
-- /autorole set <ziel> <rolle>   -- richtet eine Autorole ein (SERVER_ADMIN)
-- /autorole clear <ziel>         -- entfernt eine Autorole-Einrichtung (SERVER_ADMIN)
-- /autorole liste                -- zeigt die aktuelle Einrichtung
+- /antihack on|off              -- System ein-/ausschalten (SERVER_ADMIN)
+- /antihack_add <user|rolle>    -- von der Erkennung ausnehmen (SERVER_ADMIN)
+- /antihack_liste                -- zeigt die Ausnahmeliste
 
-Drei unabhängige Ziele (jedes kann eine eigene Rolle haben, 0 = nicht
-eingerichtet):
-  alle    -> wird JEDEM neuen menschlichen Mitglied beim Beitritt vergeben
-  bots    -> wird JEDEM neuen Bot-/App-Account beim Beitritt vergeben
-  admins  -> wird automatisch vergeben/entzogen, sobald ein Mitglied
-             Administrator-Rechte bekommt bzw. verliert (egal ob direkt beim
-             Beitritt oder später durch eine andere Rolle) -- praktisch, um
-             Admins auf einen Blick sichtbar zu markieren (z.B. eigene Farbe),
-             ohne das manuell nachpflegen zu müssen.
-
-Vorher gab es nur EIN einzelnes Autorole-Feld ohne Unterscheidung zwischen
-Mensch und Bot -- ein neu hinzugefügter Bot hätte also ungewollt dieselbe
-"Willkommens"-Rolle bekommen wie ein Mensch. Das ist jetzt sauber getrennt.
+Erkennung: postet ein Account innerhalb kurzer Zeit etwas mit Anhang oder Link
+(z.B. Bilder) in mehrere VERSCHIEDENE Kanäle, gilt das als typisches Verhalten
+eines gekaperten/kompromittierten Accounts (Self-Bot-Spam) -- der Account wird
+automatisch gekickt, informiert per DM (best effort) und im Strafregister
+vermerkt. Ganz normales Chatten in mehreren Kanälen OHNE Anhang/Link löst
+NICHTS aus, um Fehlalarme bei normalen Usern zu vermeiden.
 """
+import datetime as dt
+import logging
+import re
+from collections import defaultdict, deque
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -26,184 +24,179 @@ from discord.ext import commands
 from bot.utils.permissions import require_level, PermissionLevel
 from bot.utils.embeds import success_embed, error_embed, base_embed
 from bot.utils.i18n import t
-from bot.utils.db_helpers import get_guild_language, get_guild_settings_snapshot, set_autorole, AUTOROLE_TARGETS
+from bot.utils.db_helpers import (
+    get_guild_language,
+    get_anti_hack_enabled,
+    set_anti_hack_enabled,
+    is_anti_exempt,
+    add_anti_exemption,
+    remove_anti_exemption,
+    get_anti_exemptions,
+    log_punishment,
+)
+from bot.database.db import get_session
+from bot.database.models import GuildSettings
 
-TARGET_CHOICES = [
-    app_commands.Choice(name="Alle (Menschen)", value="alle"),
-    app_commands.Choice(name="Bots/Apps", value="bots"),
-    app_commands.Choice(name="Administratoren", value="admins"),
-]
+log = logging.getLogger("bot.anti_hack")
 
-_SNAPSHOT_KEY_BY_TARGET = {
-    "alle": "autorole_id",
-    "bots": "autorole_bot_id",
-    "admins": "autorole_admin_id",
-}
+# Schwellenwerte: X VERSCHIEDENE Kanäle mit Anhang/Link innerhalb von Y Sekunden.
+DISTINCT_CHANNEL_THRESHOLD = 3
+WINDOW_SECONDS = 15
+
+_LINK_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 
 
-class AutoRole(commands.Cog):
+def _looks_shareable(message: discord.Message) -> bool:
+    """True, wenn die Nachricht etwas 'Teilbares' enthält (Anhang oder Link) --
+    reines Chatten ohne das löst die Erkennung nie aus."""
+    return bool(message.attachments) or bool(_LINK_RE.search(message.content or ""))
+
+
+class AntiHack(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # guild_id -> user_id -> deque[(timestamp, channel_id)]
+        self._activity: dict[int, dict[int, deque]] = defaultdict(lambda: defaultdict(deque))
+        self._punishing: set[tuple[int, int]] = set()
 
-    # ---------- Beitritt: alle / bots ----------
+    async def _is_exempt(self, member: discord.Member) -> bool:
+        if member.bot or member.id == member.guild.owner_id or member.guild_permissions.administrator:
+            return True
+        if await is_anti_exempt(member.guild.id, "antihack", "user", member.id):
+            return True
+        for role in member.roles:
+            if await is_anti_exempt(member.guild.id, "antihack", "role", role.id):
+                return True
+        return False
+
     @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member) -> None:
-        snapshot = await get_guild_settings_snapshot(member.guild.id)
-        role_id = snapshot.get("autorole_bot_id", 0) if member.bot else snapshot.get("autorole_id", 0)
-        if role_id:
-            role = member.guild.get_role(role_id)
-            if role:
-                try:
-                    await member.add_roles(role, reason="Autorole")
-                except discord.Forbidden:
-                    pass
-
-        # Falls das neue Mitglied (z.B. durch eine Integration) direkt beim
-        # Beitritt schon Administrator-Rechte mitbringt, sofort die
-        # Admin-Autorole mitgeben, statt auf die nächste Rollenänderung zu warten.
-        admin_role_id = snapshot.get("autorole_admin_id", 0)
-        if admin_role_id and member.guild_permissions.administrator:
-            role = member.guild.get_role(admin_role_id)
-            if role and role not in member.roles:
-                try:
-                    await member.add_roles(role, reason="Autorole: Administrator-Rechte erkannt")
-                except discord.Forbidden:
-                    pass
-
-    # ---------- Admin-Rechte gewonnen/verloren ----------
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
-        had_admin = before.guild_permissions.administrator
-        has_admin = after.guild_permissions.administrator
-        if had_admin == has_admin:
-            return  # keine Änderung an den Administrator-Rechten -- nichts zu tun
-
-        snapshot = await get_guild_settings_snapshot(after.guild.id)
-        admin_role_id = snapshot.get("autorole_admin_id", 0)
-        if not admin_role_id:
+    async def on_message(self, message: discord.Message):
+        if not message.guild or not isinstance(message.author, discord.Member):
             return
-        role = after.guild.get_role(admin_role_id)
-        if not role:
+        if not await get_anti_hack_enabled(message.guild.id):
+            return
+        if not _looks_shareable(message):
+            return
+        if await self._is_exempt(message.author):
             return
 
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        bucket = self._activity[message.guild.id][message.author.id]
+        bucket.append((now, message.channel.id))
+        while bucket and now - bucket[0][0] > WINDOW_SECONDS:
+            bucket.popleft()
+
+        distinct_channels = {ch for _, ch in bucket}
+        if len(distinct_channels) >= DISTINCT_CHANNEL_THRESHOLD:
+            bucket.clear()
+            await self._punish(message.guild, message.author, len(distinct_channels))
+
+    async def _punish(self, guild: discord.Guild, member: discord.Member, channel_count: int) -> None:
+        key = (guild.id, member.id)
+        if key in self._punishing:
+            return
+        self._punishing.add(key)
         try:
-            if has_admin and role not in after.roles:
-                await after.add_roles(role, reason="Autorole: Administrator-Rechte erhalten")
-            elif not has_admin and role in after.roles:
-                await after.remove_roles(role, reason="Autorole: Administrator-Rechte verloren")
-        except discord.Forbidden:
-            pass
+            lang = await get_guild_language(guild.id)
+
+            try:
+                await member.send(t("antihack.kicked_dm", lang, guild=guild.name))
+            except discord.Forbidden:
+                pass  # DMs geschlossen -- kein Blocker für den Kick
+
+            try:
+                await member.kick(reason="Anti-Hack: verdächtiges kanalübergreifendes Spam-Verhalten")
+            except discord.Forbidden:
+                log.warning("Konnte %s in Guild %s nicht kicken (fehlende Berechtigung).", member.id, guild.id)
+                return
+
+            await log_punishment(guild.id, member.id, self.bot.user.id, "anti_hack_kick",
+                                  f"Automatisch: identisches/teilbares Verhalten in {channel_count} Kanälen")
+
+            embed = base_embed("🚨 Anti-Hack" if lang == "de" else "🚨 Anti-hack")
+            embed.color = discord.Color.red()
+            embed.description = t("antihack.alert", lang, user=member.mention, count=channel_count)
+
+            async with get_session() as session:
+                settings = await session.get(GuildSettings, guild.id)
+                log_channel_id = settings.mod_log_channel_id if settings else 0
+            if log_channel_id:
+                channel = guild.get_channel(log_channel_id)
+                if channel:
+                    await channel.send(embed=embed)
+        finally:
+            self._punishing.discard(key)
 
     # ---------- Commands ----------
-    @commands.hybrid_group(name="autorole", description="Automatische Rollenvergabe verwalten.")
+    @commands.hybrid_group(name="antihack", description="Anti-Hack-System verwalten.")
     @commands.guild_only()
-    async def autorole(self, ctx: commands.Context):
+    async def antihack(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @autorole.command(name="set", description="Richtet eine Autorole für ein Ziel ein.")
-    @app_commands.describe(ziel="Für wen die Rolle automatisch vergeben wird", rolle="Die zu vergebende Rolle")
-    @app_commands.choices(ziel=TARGET_CHOICES)
+    @antihack.command(name="on", description="Aktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def autorole_set(self, ctx: commands.Context, ziel: str, rolle: discord.Role):
+    async def antihack_on(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        if ziel not in AUTOROLE_TARGETS:
-            await ctx.send(embed=error_embed("Ungültiges Ziel." if lang == "de" else "Invalid target."))
-            return
-        if rolle >= ctx.guild.me.top_role:
-            await ctx.send(embed=error_embed(
-                "Diese Rolle steht höher als (oder gleich) meine eigene -- ich kann sie nicht vergeben."
-                if lang == "de" else
-                "That role is higher than (or equal to) my own -- I can't assign it."))
-            return
+        await set_anti_hack_enabled(ctx.guild.id, True)
+        await ctx.send(embed=success_embed(t("anti.enabled", lang, feature="Anti-Hack")))
 
-        await set_autorole(ctx.guild.id, ziel, rolle.id)
-        target_label = t(f"autorole.target_{ziel}", lang)
-        await ctx.send(embed=success_embed(t("autorole.set", lang, target=target_label, role=rolle.mention)))
-
-    @autorole.command(name="clear", description="Entfernt die Autorole-Einrichtung für ein Ziel.")
-    @app_commands.describe(ziel="Für welches Ziel die Autorole entfernt wird")
-    @app_commands.choices(ziel=TARGET_CHOICES)
+    @antihack.command(name="off", description="Deaktiviert das Anti-Hack-System.")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def autorole_clear(self, ctx: commands.Context, ziel: str):
+    async def antihack_off(self, ctx: commands.Context):
         lang = await get_guild_language(ctx.guild.id)
-        if ziel not in AUTOROLE_TARGETS:
-            await ctx.send(embed=error_embed("Ungültiges Ziel." if lang == "de" else "Invalid target."))
-            return
-        await set_autorole(ctx.guild.id, ziel, 0)
-        target_label = t(f"autorole.target_{ziel}", lang)
-        await ctx.send(embed=success_embed(t("autorole.cleared", lang, target=target_label)))
+        await set_anti_hack_enabled(ctx.guild.id, False)
+        await ctx.send(embed=success_embed(t("anti.disabled", lang, feature="Anti-Hack")))
 
-    @autorole.command(name="liste", description="Zeigt die aktuelle Autorole-Einrichtung.")
-    async def autorole_liste(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        snapshot = await get_guild_settings_snapshot(ctx.guild.id)
-
-        lines = []
-        for target in AUTOROLE_TARGETS:
-            role_id = snapshot.get(_SNAPSHOT_KEY_BY_TARGET[target], 0)
-            role = ctx.guild.get_role(role_id) if role_id else None
-            label = t(f"autorole.target_{target}", lang)
-            value = role.mention if role else ("— nicht eingerichtet —" if lang == "de" else "— not configured —")
-            lines.append(f"**{label}**: {value}")
-
-        if not any(snapshot.get(v) for v in _SNAPSHOT_KEY_BY_TARGET.values()):
-            await ctx.send(embed=error_embed(t("autorole.list_empty", lang)))
-            return
-
-        embed = base_embed(t("autorole.list_title", lang))
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(
-        name="autorole_all",
-        description="Vergibt eine Rolle rückwirkend an ALLE aktuellen (menschlichen) Mitglieder.",
-    )
-    @app_commands.describe(rolle="Die Rolle, die alle aktuellen Mitglieder bekommen sollen")
+    @commands.hybrid_command(name="antihack_add", description="Nimmt einen User oder eine Rolle von der Anti-Hack-Erkennung aus.")
+    @app_commands.describe(user="Optional: ein User", rolle="Optional: eine Rolle")
     @commands.guild_only()
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def autorole_all(self, ctx: commands.Context, rolle: discord.Role):
-        lang = await get_guild_language(ctx.guild.id)
+    async def antihack_add(self, ctx: commands.Context, user: discord.Member = None, rolle: discord.Role = None):
+        await _add_exemption(ctx, "antihack", "Anti-Hack", user, rolle)
 
-        if rolle >= ctx.guild.me.top_role:
-            await ctx.send(embed=error_embed(
-                "Diese Rolle steht höher als (oder gleich) meine eigene -- ich kann sie nicht vergeben."
-                if lang == "de" else
-                "That role is higher than (or equal to) my own -- I can't assign it."))
-            return
+    @commands.hybrid_command(name="antihack_liste", description="Zeigt die Anti-Hack-Ausnahmeliste.")
+    @commands.guild_only()
+    async def antihack_liste(self, ctx: commands.Context):
+        await _list_exemptions(ctx, "antihack", "Anti-Hack")
 
-        # Kann bei großen Servern eine Weile dauern (ein API-Aufruf pro
-        # Mitglied) -- defer() verhindert den 3-Sekunden-Timeout der Interaktion.
-        await ctx.defer()
 
-        given, already_had, failed = 0, 0, 0
-        for member in ctx.guild.members:
-            if member.bot:
-                continue
-            if rolle in member.roles:
-                already_had += 1
-                continue
-            try:
-                await member.add_roles(rolle, reason=f"/autorole_all von {ctx.author}")
-                given += 1
-            except discord.Forbidden:
-                failed += 1
-            except discord.HTTPException:
-                failed += 1
+async def _add_exemption(ctx: commands.Context, feature: str, label: str,
+                          user: discord.Member = None, rolle: discord.Role = None) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    if not user and not rolle:
+        await ctx.send(embed=error_embed(
+            "Gib entweder einen User oder eine Rolle an." if lang == "de"
+            else "Provide either a user or a role."))
+        return
 
-        summary = (
-            f"{given} Mitgliedern die Rolle {rolle.mention} gegeben.\n"
-            f"{already_had} hatten sie bereits.\n"
-            + (f"{failed} fehlgeschlagen (Berechtigung/Rate-Limit)." if failed else "")
-            if lang == "de" else
-            f"Gave {rolle.mention} to {given} members.\n"
-            f"{already_had} already had it.\n"
-            + (f"{failed} failed (permission/rate limit)." if failed else "")
-        )
-        await ctx.send(embed=success_embed(
-            "Autorole rückwirkend vergeben" if lang == "de" else "Autorole applied retroactively", summary,
-        ))
+    target = user or rolle
+    target_type = "user" if user else "role"
+    target_mention = target.mention
+
+    added = await add_anti_exemption(ctx.guild.id, feature, target_type, target.id, ctx.author.id)
+    if added:
+        await ctx.send(embed=success_embed(t("anti.exempt_added", lang, target=target_mention, feature=label)))
+    else:
+        await ctx.send(embed=error_embed(t("anti.exempt_already", lang, target=target_mention, feature=label)))
+
+
+async def _list_exemptions(ctx: commands.Context, feature: str, label: str) -> None:
+    lang = await get_guild_language(ctx.guild.id)
+    entries = await get_anti_exemptions(ctx.guild.id, feature)
+    if not entries:
+        await ctx.send(embed=error_embed(t("anti.exempt_list_empty", lang, feature=label)))
+        return
+
+    lines = []
+    for e in entries:
+        mention = f"<@{e.target_id}>" if e.target_type == "user" else f"<@&{e.target_id}>"
+        lines.append(mention)
+
+    embed = base_embed(t("anti.exempt_list_title", lang, feature=label))
+    embed.description = "\n".join(lines[:50])
+    await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(AutoRole(bot))
+    await bot.add_cog(AntiHack(bot))

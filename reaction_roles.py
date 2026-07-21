@@ -1,35 +1,22 @@
 """
-Ticket-System.
+Ticket-System (neu, vereinfacht).
 
-- /ticketpanel send <kanal> [design]     -- sendet ein Ticket-Panel in einen Kanal (SERVER_ADMIN).
-                                             Zeigt automatisch ein Auswahlmenü mit allen per
-                                             /ticketart erstellen angelegten Ticket-Arten -- oder,
-                                             falls keine Ticket-Art existiert, den klassischen
-                                             einzelnen "Ticket erstellen"-Button (abwärtskompatibel).
-- /ticketart erstellen|liste|entfernen|bearbeiten  -- verschiedene Ticket-ARTEN (Kategorien zur
-                                             Auswahl, z.B. Support/Bug-Report/Beschwerde) verwalten
-                                             (SERVER_ADMIN). Jede Ticket-Art kann eine eigene
-                                             Discord-Kanalkategorie und Farbe haben.
-- /ticketart standardkategorie <kategorie> -- legt die STANDARD-Discord-Kanalkategorie fest, in der
-                                             neue Ticket-Kanäle entstehen, wenn eine Ticket-Art
-                                             keine eigene hinterlegt hat (SERVER_ADMIN). War früher
-                                             ein eigener Befehl (/ticketkategorie set) -- jetzt hier
-                                             gebündelt, um die Befehlsliste nicht unnötig aufzublähen.
-- /ticketclose                            -- schließt das aktuelle Ticket (TEAM, oder der Ersteller)
-- /ticketclaim                            -- ein Team-Mitglied übernimmt das Ticket sichtbar (TEAM)
+- /ticketpanel setup <name> <beschreibung> <farbe> [kategorie]  -- legt ein neues
+                                             Ticket-Panel an (SERVER_ADMIN). Farbe:
+                                             Standard, Premium, VIP oder Schwarz.
+- /ticketpanel senden <panel_id> <kanal>    -- sendet ein angelegtes Panel in einen
+                                             Kanal (SERVER_ADMIN)
+- /ticketpanel entfernen <panel_id>          -- löscht ein Panel wieder (SERVER_ADMIN)
+- /ticketpanel liste                          -- zeigt alle Panels dieses Servers
+- /ticketclose                                -- schließt das aktuelle Ticket (TEAM, oder der Ersteller)
+- /ticketclaim                                -- ein Team-Mitglied übernimmt das Ticket sichtbar (TEAM)
 
-Buttons/Auswahlmenüs sind "persistent" (überleben einen Bot-Neustart) -- dafür
-registriert cog_load() diese Views einmal über bot.add_view(...). Für das
-Auswahlmenü wird dabei bewusst ein generischer "Dispatcher" mit Platzhalter-
-Option registriert: Discord matcht eingehende Interaktionen ausschließlich
-über die custom_id, die tatsächlich im Server angezeigten Optionen kommen
-weiterhin aus der Nachricht selbst, die /ticketpanel send ursprünglich mit
-den echten, damals aktuellen Ticket-Arten gesendet hat.
-
-Drei Designs für das Panel (visuell unterschiedlich, gleiche Funktion):
-  standard -> Blurple, klassisch
-  minimal  -> schlicht, ohne Extra-Felder
-  premium  -> Gold, mit zusätzlichem "Was du erwarten kannst"-Feld
+Jedes Panel hat genau EINEN "Ticket erstellen"-Button (kein Auswahlmenü mehr) --
+dafür lassen sich beliebig viele verschiedene Panels anlegen und in
+unterschiedliche Kanäle senden. Die Buttons sind persistent (überleben einen
+Bot-Neustart) über einen generischen on_interaction-Dispatcher, der anhand des
+custom_id-Präfixes (TICKET_PANEL_PREFIX + panel_id) erkennt, für welches Panel
+geklickt wurde -- funktioniert auch für neu angelegte Panels ohne Bot-Neustart.
 """
 import asyncio
 
@@ -49,146 +36,36 @@ from bot.utils.db_helpers import (
     close_ticket,
     claim_ticket,
     get_team_ranks,
-    get_ticket_categories,
-    get_ticket_category,
-    get_ticket_category_by_name,
-    create_ticket_category,
-    update_ticket_category,
-    delete_ticket_category,
-    count_open_tickets_by_category,
+    create_ticket_panel,
+    get_ticket_panels,
+    get_ticket_panel,
+    delete_ticket_panel,
 )
 from bot.database.db import get_session
-from bot.database.models import TicketCategory
+from bot.database.models import TicketPanel
 
-TICKET_CREATE_CUSTOM_ID = "ticket_create_button"
 TICKET_CLOSE_CUSTOM_ID = "ticket_close_button"
 TICKET_DELETE_CUSTOM_ID = "ticket_delete_button"
-TICKET_SELECT_CUSTOM_ID = "ticket_type_select"
+TICKET_PANEL_PREFIX = "ticket_panel_create_"  # + panel_id, siehe on_interaction-Dispatcher
 
-DESIGNS = {
-    "standard": {"color": discord.Color.blurple(), "emoji": "🎫"},
-    "minimal": {"color": discord.Color.light_grey(), "emoji": "✉️"},
-    "premium": {"color": discord.Color.gold(), "emoji": "⭐"},
-    "dark": {"color": discord.Color.from_rgb(30, 30, 40), "emoji": "🌑"},
+# Feste Farb-Vorlagen, wie gewünscht: Standard, Premium, VIP, Schwarz.
+COLOR_CHOICES = {
+    "standard": {"color": discord.Color.blurple(), "emoji": "🎫", "label": "Standard"},
+    "premium": {"color": discord.Color.gold(), "emoji": "⭐", "label": "Premium"},
+    "vip": {"color": discord.Color.purple(), "emoji": "💎", "label": "VIP"},
+    "schwarz": {"color": discord.Color.from_rgb(20, 20, 24), "emoji": "🖤", "label": "Schwarz"},
 }
 
 
-def _parse_color_hex(value: str) -> str:
-    """Validiert einen Hex-Farbcode (z.B. '#5865F2' oder '5865F2') und gibt ihn
-    normalisiert mit führendem '#' zurück. Wirft ValueError bei ungültiger Eingabe."""
-    candidate = value if value.startswith("#") else f"#{value}"
-    discord.Color.from_str(candidate)  # wirft ValueError bei ungültigem Format
-    return candidate
-
-
-async def _build_panel_embed(lang: str, design: str, categories: list[TicketCategory]) -> discord.Embed:
-    style = DESIGNS.get(design, DESIGNS["standard"])
+def _build_panel_embed(panel: TicketPanel, lang: str) -> discord.Embed:
+    style = COLOR_CHOICES.get(panel.color, COLOR_CHOICES["standard"])
     embed = discord.Embed(
-        title=f"{style['emoji']} {t('ticket.panel_title', lang)}",
-        description=f"{t('ticket.panel_desc', lang)}\n" + ("─" * 28),
+        title=f"{style['emoji']} {panel.name}",
+        description=panel.description or t("ticket.panel_desc", lang),
         color=style["color"],
     )
-    if categories:
-        lines = []
-        for c in categories[:25]:
-            line = f"{c.emoji} **{c.name}**" + (f"\n> {c.description}" if c.description else "")
-            if c.max_concurrent:
-                open_count = await count_open_tickets_by_category(c.id)
-                available = max(0, c.max_concurrent - open_count)
-                percent = round((available / c.max_concurrent) * 100)
-                line += (f"\n> {'Verfügbar' if lang == 'de' else 'Available'}: "
-                         f"{available}/{c.max_concurrent} ({percent}%)")
-            lines.append(line)
-        embed.add_field(
-            name="📂 " + ("Verfügbare Ticket-Arten" if lang == "de" else "Available ticket types"),
-            value="\n".join(lines),
-            inline=False,
-        )
-    if design == "premium":
-        embed.add_field(
-            name="✨ " + ("Was dich erwartet" if lang == "de" else "What to expect"),
-            value="Ein privater Kanal nur für dich und unser Team." if lang == "de"
-            else "A private channel just for you and our team.",
-            inline=False,
-        )
     embed.set_footer(text="Support-Team" if lang == "de" else "Support Team")
     return embed
-
-
-class TicketPanelView(discord.ui.View):
-    """Persistenter View für den klassischen einzelnen 'Ticket erstellen'-Button
-    (wird nur benutzt, wenn KEINE Ticket-Arten für den Server angelegt sind)."""
-
-    def __init__(self, design: str = "standard"):
-        super().__init__(timeout=None)
-        self.design = design
-
-    @discord.ui.button(label="Ticket erstellen", emoji="🎫", style=discord.ButtonStyle.primary,
-                        custom_id=TICKET_CREATE_CUSTOM_ID)
-    async def create_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _handle_create_ticket(interaction, design=self.design)
-
-
-class TicketTypeSelect(discord.ui.Select):
-    """Auswahlmenü mit den echten Ticket-Arten eines Servers -- wird beim
-    tatsächlichen Versand des Panels (/ticketpanel send) mit den dann aktuellen
-    Ticket-Arten gebaut. Läuft ein Server auf mehr als 25 Ticket-Arten (Discords
-    Limit für Auswahlmenüs), werden nur die ersten 25 angezeigt."""
-
-    def __init__(self, categories: list[TicketCategory], design: str = "standard"):
-        options = [
-            discord.SelectOption(
-                label=c.name[:100],
-                value=str(c.id),
-                description=(c.description or "")[:100] or None,
-                emoji=c.emoji or None,
-            )
-            for c in categories[:25]
-        ]
-        super().__init__(
-            placeholder="…", min_values=1, max_values=1, options=options,
-            custom_id=TICKET_SELECT_CUSTOM_ID,
-        )
-        self.design = design
-
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            category_id = int(self.values[0])
-        except (ValueError, IndexError):
-            return
-        await _handle_create_ticket(interaction, design=self.design, category_id=category_id)
-
-
-class TicketPanelSelectView(discord.ui.View):
-    """View mit dem Ticket-Arten-Auswahlmenü fürs Panel."""
-
-    def __init__(self, categories: list[TicketCategory], design: str = "standard"):
-        super().__init__(timeout=None)
-        if categories:
-            self.add_item(TicketTypeSelect(categories, design))
-
-
-def _dispatcher_select_view() -> discord.ui.View:
-    """Generischer, bei cog_load() registrierter Dispatcher für das
-    Auswahlmenü-Panel (siehe Modul-Docstring: nur die custom_id zählt für die
-    Zuordnung eingehender Interaktionen nach einem Bot-Neustart)."""
-    view = discord.ui.View(timeout=None)
-    select = discord.ui.Select(
-        custom_id=TICKET_SELECT_CUSTOM_ID,
-        placeholder="…",
-        options=[discord.SelectOption(label="…", value="0")],
-    )
-
-    async def _callback(interaction: discord.Interaction):
-        try:
-            category_id = int(select.values[0])
-        except (ValueError, IndexError):
-            return
-        await _handle_create_ticket(interaction, design="standard", category_id=category_id)
-
-    select.callback = _callback
-    view.add_item(select)
-    return view
 
 
 class TicketCloseView(discord.ui.View):
@@ -216,8 +93,7 @@ class TicketClosedView(discord.ui.View):
         await _handle_delete_ticket(interaction)
 
 
-async def _handle_create_ticket(interaction: discord.Interaction, design: str = "standard",
-                                 category_id: int = 0) -> None:
+async def _handle_create_ticket(interaction: discord.Interaction, panel: TicketPanel) -> None:
     guild = interaction.guild
     member = interaction.user
     lang = await get_guild_language(guild.id)
@@ -232,36 +108,17 @@ async def _handle_create_ticket(interaction: discord.Interaction, design: str = 
             )
             return
 
-    # Kapazitätsprüfung: ist für diese Ticket-Art ein Limit gleichzeitig
-    # offener Tickets gesetzt (max_concurrent > 0) und schon erreicht?
-    if category_id:
-        category_check = await get_ticket_category(category_id)
-        if category_check and category_check.max_concurrent:
-            open_count = await count_open_tickets_by_category(category_id)
-            if open_count >= category_check.max_concurrent:
-                await interaction.response.send_message(
-                    embed=error_embed(
-                        f"„{category_check.name}“ ist gerade voll ausgelastet ({open_count}/"
-                        f"{category_check.max_concurrent}) -- versuch es später nochmal." if lang == "de" else
-                        f"\"{category_check.name}\" is currently at full capacity ({open_count}/"
-                        f"{category_check.max_concurrent}) -- please try again later."),
-                    ephemeral=True,
-                )
-                return
-
     await interaction.response.defer(ephemeral=True)
 
-    category = await get_ticket_category(category_id) if category_id else None
-
-    async with get_session() as session:
-        settings = await get_or_create_guild_settings(session, guild.id)
-        default_category_id = settings.ticket_category_id
-
-    discord_category_id = (category.channel_category_id if category and category.channel_category_id
-                            else default_category_id)
-    discord_category = guild.get_channel(discord_category_id) if discord_category_id else None
+    discord_category = guild.get_channel(panel.category_id) if panel.category_id else None
     if discord_category and not isinstance(discord_category, discord.CategoryChannel):
         discord_category = None
+    if not discord_category:
+        async with get_session() as session:
+            settings = await get_or_create_guild_settings(session, guild.id)
+        discord_category = guild.get_channel(settings.ticket_category_id) if settings.ticket_category_id else None
+        if discord_category and not isinstance(discord_category, discord.CategoryChannel):
+            discord_category = None
 
     ranks = await get_team_ranks(guild.id)
     overwrites = {
@@ -274,17 +131,16 @@ async def _handle_create_ticket(interaction: discord.Interaction, design: str = 
         if role:
             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
-    name_prefix = f"{category.name}" if category else "ticket"
     # Kanalnamen von Discord-unzulässigen/verwirrenden Zeichen befreien, statt
     # blind zu vertrauen, dass jeder Anzeigename schon kanaltauglich ist.
     safe_username = "".join(c for c in member.name.lower() if c.isalnum() or c in "-_") or "user"
-    safe_prefix = "".join(c for c in name_prefix.lower().replace(" ", "-") if c.isalnum() or c == "-") or "ticket"
+    safe_prefix = "".join(c for c in panel.name.lower().replace(" ", "-") if c.isalnum() or c == "-") or "ticket"
     channel_name = f"{safe_prefix}-{safe_username}"[:90]
 
     try:
         ticket_channel = await guild.create_text_channel(
             name=channel_name, category=discord_category, overwrites=overwrites,
-            reason=f"Ticket erstellt von {member}" + (f" (Art: {category.name})" if category else ""),
+            reason=f"Ticket erstellt von {member} (Panel: {panel.name})",
         )
     except discord.Forbidden:
         await interaction.followup.send(
@@ -294,40 +150,18 @@ async def _handle_create_ticket(interaction: discord.Interaction, design: str = 
         )
         return
 
-    await create_ticket(guild.id, ticket_channel.id, member.id, design=design,
-                         category_id=category.id if category else 0)
+    await create_ticket(guild.id, ticket_channel.id, member.id, design=panel.color, category_id=panel.id)
 
-    if category:
-        color = discord.Color.blurple()
-        if category.color_hex:
-            try:
-                color = discord.Color.from_str(category.color_hex)
-            except ValueError:
-                pass
-        title_emoji = category.emoji or "🎫"
-        desc = t("ticket.welcome_desc", lang)
-        if category.description:
-            desc = f"**{category.name}**: {category.description}\n\n{desc}"
-    else:
-        color = DESIGNS.get(design, DESIGNS["standard"])["color"]
-        title_emoji = "🎫"
-        desc = t("ticket.welcome_desc", lang)
-
+    style = COLOR_CHOICES.get(panel.color, COLOR_CHOICES["standard"])
+    desc = f"**{panel.name}**: {panel.description}\n\n{t('ticket.welcome_desc', lang)}" if panel.description \
+        else t("ticket.welcome_desc", lang)
     welcome = discord.Embed(
-        title=f"{title_emoji} {t('ticket.welcome_title', lang, user=member.display_name)}",
+        title=f"{style['emoji']} {t('ticket.welcome_title', lang, user=member.display_name)}",
         description=desc,
-        color=color,
+        color=style["color"],
     )
 
-    # Konfigurierte Ping-Rolle für diese Ticket-Art erwähnen (falls gesetzt) --
-    # zusätzlich zum Ersteller, damit das zuständige Team sofort benachrichtigt wird.
-    ping_content = member.mention
-    if category and category.ping_role_id:
-        role = guild.get_role(category.ping_role_id)
-        if role:
-            ping_content = f"{member.mention} {role.mention}"
-
-    await ticket_channel.send(content=ping_content, embed=welcome, view=TicketCloseView())
+    await ticket_channel.send(content=member.mention, embed=welcome, view=TicketCloseView())
     await interaction.followup.send(
         embed=success_embed(t("ticket.created", lang, channel=ticket_channel.mention)),
         ephemeral=True,
@@ -399,186 +233,111 @@ class Tickets(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        # Persistente Views registrieren, damit die Buttons/Auswahlmenüs nach
-        # einem Bot-Neustart weiter funktionieren.
-        self.bot.add_view(TicketPanelView())
+        # Persistente Views für Schließen/Löschen registrieren, damit sie nach
+        # einem Bot-Neustart weiter funktionieren. Die Panel-"Ticket erstellen"-
+        # Buttons brauchen KEINE registrierte View-Instanz -- sie werden über
+        # den generischen on_interaction-Dispatcher unten behandelt, der anhand
+        # des custom_id-Präfixes (TICKET_PANEL_PREFIX + panel_id) erkennt, für
+        # welches Panel geklickt wurde. Das funktioniert auch für neu erstellte
+        # Panels, ohne dass der Bot bei jedem neuen Panel neu gestartet werden müsste.
         self.bot.add_view(TicketCloseView())
         self.bot.add_view(TicketClosedView())
-        self.bot.add_view(_dispatcher_select_view())
 
-    # ---------- Ticket-Panel ----------
-    @commands.hybrid_group(name="ticketpanel", description="Ticket-Panel verwalten.")
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type != discord.InteractionType.component:
+            return
+        custom_id = interaction.data.get("custom_id", "")
+        if not custom_id.startswith(TICKET_PANEL_PREFIX):
+            return
+        try:
+            panel_id = int(custom_id[len(TICKET_PANEL_PREFIX):])
+        except ValueError:
+            return
+        panel = await get_ticket_panel(panel_id)
+        if panel is None:
+            lang = await get_guild_language(interaction.guild.id)
+            await interaction.response.send_message(
+                embed=error_embed("Dieses Panel existiert nicht mehr." if lang == "de"
+                                   else "This panel no longer exists."), ephemeral=True)
+            return
+        await _handle_create_ticket(interaction, panel)
+
+    # ---------- Ticket-Panel (neu, vereinfacht: 4 Befehle) ----------
+    @commands.hybrid_group(name="ticketpanel", description="Ticket-Panels verwalten.")
     @commands.guild_only()
     async def ticketpanel(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @ticketpanel.command(name="send", description="Sendet ein Ticket-Panel in einen Kanal.")
-    @app_commands.describe(channel="Zielkanal für das Panel", design="standard, minimal oder premium")
-    @app_commands.choices(design=[
-        app_commands.Choice(name=d, value=d) for d in DESIGNS.keys()
+    @ticketpanel.command(name="setup", description="Legt ein neues Ticket-Panel an.")
+    @app_commands.describe(
+        name="Name des Panels (erscheint als Titel)", beschreibung="Kurze Beschreibung",
+        farbe="Standard, Premium, VIP oder Schwarz", kategorie="Discord-Kanalkategorie für neue Ticket-Kanäle",
+    )
+    @app_commands.choices(farbe=[
+        app_commands.Choice(name="Standard", value="standard"),
+        app_commands.Choice(name="Premium", value="premium"),
+        app_commands.Choice(name="VIP", value="vip"),
+        app_commands.Choice(name="Schwarz", value="schwarz"),
     ])
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def ticketpanel_send(self, ctx: commands.Context, channel: discord.TextChannel, design: str = "standard"):
+    async def ticketpanel_setup(self, ctx: commands.Context, name: str, beschreibung: str,
+                                 farbe: str, kategorie: discord.CategoryChannel = None):
         lang = await get_guild_language(ctx.guild.id)
-        categories = await get_ticket_categories(ctx.guild.id)
-        embed = await _build_panel_embed(lang, design, categories)
-
-        if categories:
-            view = TicketPanelSelectView(categories, design=design)
-            extra = (f"\n\n{len(categories)} Ticket-Arten im Auswahlmenü."
-                     if lang == "de" else f"\n\n{len(categories)} ticket types in the dropdown.")
-        else:
-            view = TicketPanelView(design=design)
-            extra = ("\n\nKeine Ticket-Arten eingerichtet -- einzelner Button wird verwendet. "
-                     "Nutze `/ticketart erstellen`, um mehrere Ticket-Kategorien anzubieten." if lang == "de" else
-                     "\n\nNo ticket types configured -- using a single button. "
-                     "Use `/ticketart erstellen` to offer multiple ticket categories.")
-
-        await channel.send(embed=embed, view=view)
+        panel = await create_ticket_panel(
+            ctx.guild.id, name, beschreibung, farbe, kategorie.id if kategorie else 0, ctx.author.id,
+        )
         await ctx.send(embed=success_embed(
-            "Panel gesendet" if lang == "de" else "Panel sent",
-            f"In {channel.mention} ({design}).{extra}",
-        ))
+            f"✅ Panel #{panel.id} „{name}“ angelegt." if lang == "de" else f"✅ Panel #{panel.id} \"{name}\" created."))
 
-    # ---------- Ticket-Arten (verschiedene Kategorien zur Auswahl) ----------
-    @commands.hybrid_group(name="ticketart", description="Verschiedene Ticket-Arten (Kategorien) verwalten.")
-    @commands.guild_only()
-    async def ticketart(self, ctx: commands.Context):
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
-
-    @ticketart.command(name="erstellen", description="Erstellt eine neue Ticket-Art (z.B. Support, Bug-Report).")
-    @app_commands.describe(
-        name="Name der Ticket-Art (wird im Auswahlmenü angezeigt)",
-        emoji="Emoji für die Ticket-Art (Standard: 🎫)",
-        beschreibung="Kurze Beschreibung, im Auswahlmenü sichtbar",
-        farbe="Hex-Farbcode für die Willkommens-Nachricht, z.B. #5865F2",
-        kanal_kategorie="Eigene Discord-Kanalkategorie für diese Ticket-Art (optional)",
-        max_gleichzeitig="Maximal gleichzeitig offene Tickets dieser Art (0 = unbegrenzt)",
-        ping_rolle="Rolle, die beim Öffnen eines Tickets dieser Art erwähnt wird (optional)",
-    )
+    @ticketpanel.command(name="senden", description="Sendet ein Ticket-Panel in einen Kanal.")
+    @app_commands.describe(panel_id="Die Panel-ID aus /ticketpanel liste", kanal="Zielkanal")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def ticketart_erstellen(
-        self, ctx: commands.Context, name: str, emoji: str = "🎫", beschreibung: str = "",
-        farbe: str = "", kanal_kategorie: discord.CategoryChannel = None,
-        max_gleichzeitig: int = 0, ping_rolle: discord.Role = None,
-    ):
+    async def ticketpanel_senden(self, ctx: commands.Context, panel_id: int, kanal: discord.TextChannel):
         lang = await get_guild_language(ctx.guild.id)
-
-        if await get_ticket_category_by_name(ctx.guild.id, name):
-            await ctx.send(embed=error_embed(t("ticket.type_exists", lang)))
+        panel = await get_ticket_panel(panel_id)
+        if panel is None or panel.guild_id != ctx.guild.id:
+            await ctx.send(embed=error_embed("Panel nicht gefunden." if lang == "de" else "Panel not found."))
             return
 
-        color_hex = ""
-        if farbe:
-            try:
-                color_hex = _parse_color_hex(farbe)
-            except ValueError:
-                await ctx.send(embed=error_embed(
-                    "Ungültiger Hex-Farbcode, z.B. #5865F2." if lang == "de"
-                    else "Invalid hex color code, e.g. #5865F2."))
-                return
-
-        existing_count = len(await get_ticket_categories(ctx.guild.id))
-        category = await create_ticket_category(
-            ctx.guild.id, name=name, emoji=emoji, description=beschreibung,
-            color_hex=color_hex, channel_category_id=kanal_kategorie.id if kanal_kategorie else 0,
-            max_concurrent=max(0, max_gleichzeitig), ping_role_id=ping_rolle.id if ping_rolle else 0,
+        style = COLOR_CHOICES.get(panel.color, COLOR_CHOICES["standard"])
+        embed = _build_panel_embed(panel, lang)
+        view = discord.ui.View(timeout=None)
+        button = discord.ui.Button(
+            label="Ticket erstellen" if lang == "de" else "Create ticket", emoji=style["emoji"],
+            style=discord.ButtonStyle.primary, custom_id=f"{TICKET_PANEL_PREFIX}{panel.id}",
         )
-
-        note = ""
-        if existing_count >= 25:
-            note = ("\n\n⚠️ Discord erlaubt maximal 25 Optionen pro Auswahlmenü -- diese Ticket-Art "
-                    "wird im Panel nicht angezeigt, solange mehr als 25 Ticket-Arten existieren."
-                    if lang == "de" else
-                    "\n\n⚠️ Discord allows a maximum of 25 options per select menu -- this ticket type "
-                    "won't show in the panel while more than 25 ticket types exist.")
-
-        await ctx.send(embed=success_embed(t("ticket.type_created", lang, name=category.name) + note))
-
-    @ticketart.command(name="liste", description="Zeigt alle Ticket-Arten dieses Servers.")
-    async def ticketart_liste(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        categories = await get_ticket_categories(ctx.guild.id)
-        if not categories:
-            await ctx.send(embed=error_embed(t("ticket.type_list_empty", lang)))
+        view.add_item(button)
+        try:
+            await kanal.send(embed=embed, view=view)
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed("Ich kann in diesem Kanal nicht senden." if lang == "de"
+                                              else "I can't send in that channel."))
             return
+        await ctx.send(embed=success_embed(f"📨 Panel in {kanal.mention} gesendet."))
 
-        embed = base_embed(t("ticket.type_list_title", lang))
+    @ticketpanel.command(name="entfernen", description="Löscht ein Ticket-Panel (bestehende Tickets bleiben unberührt).")
+    @app_commands.describe(panel_id="Die Panel-ID aus /ticketpanel liste")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def ticketpanel_entfernen(self, ctx: commands.Context, panel_id: int):
+        lang = await get_guild_language(ctx.guild.id)
+        ok = await delete_ticket_panel(panel_id)
+        await ctx.send(embed=success_embed("Panel gelöscht." if lang == "de" else "Panel deleted.") if ok
+                        else error_embed("Panel nicht gefunden." if lang == "de" else "Panel not found."))
+
+    @ticketpanel.command(name="liste", description="Zeigt alle Ticket-Panels dieses Servers.")
+    async def ticketpanel_liste(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        panels = await get_ticket_panels(ctx.guild.id)
+        if not panels:
+            await ctx.send(embed=error_embed("Noch keine Panels angelegt." if lang == "de" else "No panels yet."))
+            return
         lines = []
-        for c in categories:
-            target = (ctx.guild.get_channel(c.channel_category_id).name
-                      if c.channel_category_id and ctx.guild.get_channel(c.channel_category_id)
-                      else ("Standard-Kategorie" if lang == "de" else "default category"))
-            desc = f" — {c.description}" if c.description else ""
-            lines.append(f"{c.emoji} **{c.name}**{desc}\n　↳ {target}")
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @ticketart.command(name="entfernen", description="Entfernt eine Ticket-Art.")
-    @app_commands.describe(name="Name der zu entfernenden Ticket-Art")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def ticketart_entfernen(self, ctx: commands.Context, name: str):
-        lang = await get_guild_language(ctx.guild.id)
-        category = await get_ticket_category_by_name(ctx.guild.id, name)
-        if not category:
-            await ctx.send(embed=error_embed(t("ticket.type_not_found", lang)))
-            return
-        await delete_ticket_category(category.id)
-        await ctx.send(embed=success_embed(t("ticket.type_removed", lang, name=category.name)))
-
-    @ticketart.command(name="bearbeiten", description="Bearbeitet eine bestehende Ticket-Art.")
-    @app_commands.describe(
-        name="Name der zu bearbeitenden Ticket-Art",
-        emoji="Neues Emoji (optional)",
-        beschreibung="Neue Beschreibung (optional)",
-        farbe="Neuer Hex-Farbcode, z.B. #5865F2 (optional)",
-        kanal_kategorie="Neue Discord-Kanalkategorie (optional)",
-    )
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def ticketart_bearbeiten(
-        self, ctx: commands.Context, name: str, emoji: str = None, beschreibung: str = None,
-        farbe: str = None, kanal_kategorie: discord.CategoryChannel = None,
-    ):
-        lang = await get_guild_language(ctx.guild.id)
-        category = await get_ticket_category_by_name(ctx.guild.id, name)
-        if not category:
-            await ctx.send(embed=error_embed(t("ticket.type_not_found", lang)))
-            return
-
-        color_hex = None
-        if farbe:
-            try:
-                color_hex = _parse_color_hex(farbe)
-            except ValueError:
-                await ctx.send(embed=error_embed(
-                    "Ungültiger Hex-Farbcode, z.B. #5865F2." if lang == "de"
-                    else "Invalid hex color code, e.g. #5865F2."))
-                return
-
-        await update_ticket_category(
-            category.id, emoji=emoji, description=beschreibung, color_hex=color_hex,
-            channel_category_id=kanal_kategorie.id if kanal_kategorie else None,
-        )
-        await ctx.send(embed=success_embed(t("ticket.type_updated", lang, name=category.name)))
-
-    # ---------- Standard-Kanalkategorie (Discord-Kategorie-Kanal) ----------
-    # Bewusst KEIN eigener Top-Level-Befehl mehr (war vorher /ticketkategorie set)
-    # -- das führte zu Verwirrung zwischen "Kategorie" (Discord-Kanalkategorie)
-    # und "Art" (Ticket-Typ zur Auswahl). Jetzt als Unterbefehl von /ticketart
-    # gebündelt, ein Befehl weniger im "/"-Menü, gleiche Funktion.
-    @ticketart.command(name="standardkategorie",
-                        description="Legt die Standard-Discord-Kanalkategorie für neue Ticket-Kanäle fest.")
-    @app_commands.describe(kategorie="Die Discord-Kanalkategorie für Ticket-Kanäle ohne eigene Kategorie")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def ticketart_standardkategorie(self, ctx: commands.Context, kategorie: discord.CategoryChannel):
-        lang = await get_guild_language(ctx.guild.id)
-        async with get_session() as session:
-            settings = await get_or_create_guild_settings(session, ctx.guild.id)
-            settings.ticket_category_id = kategorie.id
-            await session.commit()
-        await ctx.send(embed=success_embed(t("ticket.category_set", lang, category=kategorie.name)))
+        for p in panels:
+            style = COLOR_CHOICES.get(p.color, COLOR_CHOICES["standard"])
+            lines.append(f"#{p.id} {style['emoji']} **{p.name}** ({style['label']})")
+        await ctx.send(embed=base_embed("🎫 Ticket-Panels", "\n".join(lines)))
 
     @commands.hybrid_command(name="ticketclose", description="Schließt das aktuelle Ticket.")
     @commands.guild_only()

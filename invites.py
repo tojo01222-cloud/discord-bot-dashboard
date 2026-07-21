@@ -1,203 +1,125 @@
 """
-Anti-Nuke-System.
+Werbungs- und Partner-System.
 
-Erkennt destruktive Massenaktionen (viele Kanal-Löschungen, Rollen-Löschungen
-oder Bans in kurzer Zeit) über die Audit-Log-Einträge und schränkt den
-Verursacher automatisch ein (alle Rollen entfernt), statt dem Server beim
-Zusehen zuzusehen, wie er "genuked" wird.
+- /werbung kanal <kanal>                     -- legt den Werbe-Kanal fest (SERVER_ADMIN)
+- /werbung erstellen <text>                   -- postet eine formatierte Werbe-Anzeige dort
+- /partner add <name> <einladungslink>         -- fügt einen Partner-Server hinzu (SERVER_ADMIN)
+- /partner list                                 -- zeigt alle Partner
+- /partner remove <id>                          -- entfernt einen Partner (SERVER_ADMIN)
 
-Wichtig zur Funktionsweise:
-- Discord liefert bei on_guild_channel_delete/on_guild_role_delete KEINEN
-  Verursacher direkt mit, daher wird kurz danach der Audit-Log abgefragt.
-- Server-Owner, der eingetragene BOT_OWNER und Einträge in der
-  TrustedUser-Whitelist lösen die Erkennung nie aus.
-- Die Zähler liegen bewusst im Arbeitsspeicher (nicht in der DB), da es sich
-  um kurzlebige Zeitfenster (Sekunden) handelt — bei Bot-Neustart ist das
-  unkritisch, da ein Angriff dann ohnehin neu beginnen müsste.
+Bewusst KEIN automatisches Cross-Posting in den Partner-Server selbst -- das
+würde voraussetzen, dass der Bot auch dort ist und Schreibrechte hat, was
+nicht garantiert werden kann. Stattdessen: eine gepflegte Partnerliste mit
+Einladungslinks.
 """
-from __future__ import annotations
-
-import asyncio
-import datetime as dt
-import logging
-from collections import defaultdict, deque
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.config import config
 from bot.utils.permissions import require_level, PermissionLevel
 from bot.utils.embeds import success_embed, error_embed, base_embed
-from bot.utils.i18n import t
 from bot.utils.db_helpers import (
     get_guild_language,
-    get_security_settings,
-    set_anti_nuke_enabled,
-    is_trusted_user,
-    add_trusted_user,
-    remove_trusted_user,
-    get_trusted_users,
-    log_punishment,
+    get_ad_channel,
+    set_ad_channel,
+    add_partner,
+    get_partners,
+    remove_partner,
 )
 
-log = logging.getLogger("bot.anti_nuke")
 
-# Schwellenwerte: X Aktionen innerhalb von Y Sekunden lösen den Schutz aus.
-THRESHOLD_COUNT = 3
-THRESHOLD_WINDOW_SECONDS = 10
-
-
-class AntiNuke(commands.Cog):
+class Werbung(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # guild_id -> user_id -> Zeitstempel der letzten Aktionen
-        self._action_log: dict[int, dict[int, deque]] = defaultdict(lambda: defaultdict(deque))
-        # Verhindert doppelte Bestrafung, während bereits eine Reaktion läuft
-        self._punishing: set[tuple[int, int]] = set()
 
-    async def _is_exempt(self, guild: discord.Guild, user_id: int) -> bool:
-        if user_id == guild.owner_id or user_id == config.BOT_OWNER_ID or user_id == self.bot.user.id:
-            return True
-        return await is_trusted_user(guild.id, user_id)
-
-    async def _get_audit_actor(self, guild: discord.Guild, action: discord.AuditLogAction) -> discord.Member | None:
-        try:
-            async for entry in guild.audit_logs(limit=1, action=action):
-                # Nur akzeptieren, wenn der Eintrag frisch ist (letzte 5 Sekunden)
-                if (dt.datetime.now(dt.timezone.utc) - entry.created_at).total_seconds() < 5:
-                    return entry.user if isinstance(entry.user, discord.Member) else guild.get_member(entry.user.id)
-        except discord.Forbidden:
-            log.warning("Fehlende Berechtigung 'View Audit Log' in Guild %s", guild.id)
-        return None
-
-    async def _register_action(self, guild: discord.Guild, actor: discord.Member, action_name: str) -> None:
-        enabled, _ = await get_security_settings(guild.id)
-        if not enabled:
-            return
-        if await self._is_exempt(guild, actor.id):
-            return
-
-        now = dt.datetime.now(dt.timezone.utc).timestamp()
-        bucket = self._action_log[guild.id][actor.id]
-        bucket.append(now)
-        while bucket and now - bucket[0] > THRESHOLD_WINDOW_SECONDS:
-            bucket.popleft()
-
-        if len(bucket) >= THRESHOLD_COUNT:
-            bucket.clear()
-            await self._punish(guild, actor, action_name)
-
-    async def _punish(self, guild: discord.Guild, actor: discord.Member, action_name: str) -> None:
-        key = (guild.id, actor.id)
-        if key in self._punishing:
-            return
-        self._punishing.add(key)
-        try:
-            lang = await get_guild_language(guild.id)
-            removable_roles = [r for r in actor.roles if r != guild.default_role and r < guild.me.top_role]
-            if removable_roles:
-                try:
-                    await actor.remove_roles(*removable_roles, reason="Anti-Nuke: verdächtige Massenaktionen")
-                except discord.Forbidden:
-                    log.warning("Konnte Rollen von %s in Guild %s nicht entfernen (fehlende Berechtigung).",
-                                actor.id, guild.id)
-
-            await log_punishment(guild.id, actor.id, self.bot.user.id, "anti_nuke_action",
-                                  f"Automatisch ausgelöst durch: {action_name}")
-
-            embed = base_embed(t("security.nuke_alert_title", lang))
-            embed.color = discord.Color.red()
-            embed.description = t("security.nuke_alert_desc", lang, user=actor.mention, action=action_name)
-
-            from bot.database.db import get_session
-            from bot.database.models import GuildSettings
-            async with get_session() as session:
-                settings = await session.get(GuildSettings, guild.id)
-                log_channel_id = settings.mod_log_channel_id if settings else 0
-
-            if log_channel_id:
-                channel = guild.get_channel(log_channel_id)
-                if channel:
-                    await channel.send(embed=embed)
-        finally:
-            self._punishing.discard(key)
-
-    # ---------- Event-Listener ----------
-
-    @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
-        actor = await self._get_audit_actor(channel.guild, discord.AuditLogAction.channel_delete)
-        if actor:
-            await self._register_action(channel.guild, actor, "Kanal-Löschungen")
-
-    @commands.Cog.listener()
-    async def on_guild_role_delete(self, role: discord.Role):
-        actor = await self._get_audit_actor(role.guild, discord.AuditLogAction.role_delete)
-        if actor:
-            await self._register_action(role.guild, actor, "Rollen-Löschungen")
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
-        actor = await self._get_audit_actor(guild, discord.AuditLogAction.ban)
-        if actor:
-            await self._register_action(guild, actor, "Massen-Bans")
-
-    # ---------- Commands ----------
-
-    @commands.hybrid_group(name="antinuke", description="Anti-Nuke-System verwalten.")
+    @commands.hybrid_group(name="werbung", description="Werbungs-System verwalten.")
     @commands.guild_only()
-    async def antinuke(self, ctx: commands.Context):
+    async def werbung(self, ctx: commands.Context):
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
 
-    @antinuke.command(name="on", description="Aktiviert das Anti-Nuke-System.")
+    @werbung.command(name="kanal", description="Legt den Kanal für Werbe-Anzeigen fest.")
+    @app_commands.describe(kanal="Der Zielkanal")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antinuke_on(self, ctx: commands.Context):
+    async def werbung_kanal(self, ctx: commands.Context, kanal: discord.TextChannel):
         lang = await get_guild_language(ctx.guild.id)
-        await set_anti_nuke_enabled(ctx.guild.id, True)
-        await ctx.send(embed=success_embed(t("security.antinuke_enabled", lang)))
+        await set_ad_channel(ctx.guild.id, kanal.id)
+        await ctx.send(embed=success_embed(
+            f"Werbe-Kanal auf {kanal.mention} gesetzt." if lang == "de"
+            else f"Ad channel set to {kanal.mention}."))
 
-    @antinuke.command(name="off", description="Deaktiviert das Anti-Nuke-System.")
+    @werbung.command(name="erstellen", description="Postet eine Werbe-Anzeige im eingerichteten Kanal.")
+    @app_commands.describe(text="Der Werbetext")
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antinuke_off(self, ctx: commands.Context):
+    async def werbung_erstellen(self, ctx: commands.Context, *, text: str):
         lang = await get_guild_language(ctx.guild.id)
-        await set_anti_nuke_enabled(ctx.guild.id, False)
-        await ctx.send(embed=success_embed(t("security.antinuke_disabled", lang)))
-
-    @antinuke.command(name="trust", description="Fügt einen User zur Anti-Nuke-Whitelist hinzu.")
-    @app_commands.describe(member="Der zu vertrauende User")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antinuke_trust(self, ctx: commands.Context, member: discord.Member):
-        lang = await get_guild_language(ctx.guild.id)
-        added = await add_trusted_user(ctx.guild.id, member.id, ctx.author.id)
-        if added:
-            await ctx.send(embed=success_embed(t("security.trusted_added", lang, user=member.mention)))
-        else:
-            await ctx.send(embed=error_embed(t("security.trusted_already", lang, user=member.mention)))
-
-    @antinuke.command(name="untrust", description="Entfernt einen User von der Anti-Nuke-Whitelist.")
-    @app_commands.describe(member="Der User")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def antinuke_untrust(self, ctx: commands.Context, member: discord.Member):
-        lang = await get_guild_language(ctx.guild.id)
-        removed = await remove_trusted_user(ctx.guild.id, member.id)
-        if removed:
-            await ctx.send(embed=success_embed(t("security.trusted_removed", lang, user=member.mention)))
-        else:
-            await ctx.send(embed=error_embed(t("security.trusted_not_found", lang, user=member.mention)))
-
-    @antinuke.command(name="trustlist", description="Zeigt die Anti-Nuke-Whitelist.")
-    async def antinuke_trustlist(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        entries = await get_trusted_users(ctx.guild.id)
-        if not entries:
-            await ctx.send(embed=error_embed(t("security.trusted_list_empty", lang)))
+        channel_id = await get_ad_channel(ctx.guild.id)
+        if not channel_id:
+            await ctx.send(embed=error_embed(
+                "Noch kein Werbe-Kanal eingerichtet -- nutze zuerst `/werbung kanal`." if lang == "de"
+                else "No ad channel configured yet -- use `/werbung kanal` first."))
             return
-        embed = base_embed(t("security.trusted_list_title", lang))
-        embed.description = "\n".join(f"<@{e.user_id}>" for e in entries[:50])
+
+        channel = ctx.guild.get_channel(channel_id)
+        if not channel:
+            await ctx.send(embed=error_embed(
+                "Der eingerichtete Werbe-Kanal existiert nicht mehr." if lang == "de"
+                else "The configured ad channel no longer exists."))
+            return
+
+        embed = base_embed("📢 " + ("Werbung" if lang == "de" else "Advertisement"), text)
+        embed.set_footer(text=f"{ctx.guild.name}")
+        try:
+            await channel.send(embed=embed)
+        except discord.Forbidden:
+            await ctx.send(embed=error_embed(
+                f"Ich kann in {channel.mention} nicht schreiben." if lang == "de"
+                else f"I can't send messages in {channel.mention}."))
+            return
+
+        await ctx.send(embed=success_embed(
+            f"Anzeige in {channel.mention} gepostet." if lang == "de"
+            else f"Ad posted in {channel.mention}."), ephemeral=True)
+
+    @commands.hybrid_group(name="partner", description="Partner-Server verwalten.")
+    @commands.guild_only()
+    async def partner(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @partner.command(name="add", description="Fügt einen Partner-Server hinzu.")
+    @app_commands.describe(name="Name des Partner-Servers", einladungslink="Discord-Einladungslink")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def partner_add(self, ctx: commands.Context, name: str, einladungslink: str):
+        lang = await get_guild_language(ctx.guild.id)
+        await add_partner(ctx.guild.id, name, einladungslink, ctx.author.id)
+        await ctx.send(embed=success_embed(
+            f"Partner **{name}** hinzugefügt." if lang == "de" else f"Partner **{name}** added."))
+
+    @partner.command(name="list", description="Zeigt alle Partner-Server.")
+    async def partner_list(self, ctx: commands.Context):
+        lang = await get_guild_language(ctx.guild.id)
+        partners = await get_partners(ctx.guild.id)
+        if not partners:
+            await ctx.send(embed=error_embed(
+                "Noch keine Partner eingetragen." if lang == "de" else "No partners yet."))
+            return
+
+        embed = base_embed("🤝 " + ("Partner-Server" if lang == "de" else "Partner Servers"))
+        embed.description = "\n".join(f"#{p.id} — **{p.name}** — {p.invite_link}" for p in partners[:25])
         await ctx.send(embed=embed)
+
+    @partner.command(name="remove", description="Entfernt einen Partner-Server.")
+    @app_commands.describe(partner_id="Die ID aus /partner list")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def partner_remove(self, ctx: commands.Context, partner_id: int):
+        lang = await get_guild_language(ctx.guild.id)
+        ok = await remove_partner(partner_id)
+        if ok:
+            await ctx.send(embed=success_embed("Partner entfernt." if lang == "de" else "Partner removed."))
+        else:
+            await ctx.send(embed=error_embed("ID nicht gefunden." if lang == "de" else "ID not found."))
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(AntiNuke(bot))
+    await bot.add_cog(Werbung(bot))
