@@ -478,3 +478,112 @@ async def antiwerbung_exemptions_add(request: Request, guild_id: int, target_typ
 async def antiwerbung_exemptions_remove(request: Request, guild_id: int, target_type: str, target_id: int):
     return await _exemptions_remove(request, guild_id, "antiwerbung", target_type, target_id,
                                      f"/dashboard/{guild_id}/antiwerbung-ausnahmen")
+
+# ---------- Ticket-Setups (Dashboard) ----------
+
+@server_extra_router.get("/dashboard/{guild_id}/tickets/kategorien", response_class=HTMLResponse)
+async def ticket_categories_page(request: Request, guild_id: int):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    cats = await get_ticket_categories(guild_id)
+    entries = []
+    for c in cats:
+        open_count = await count_open_tickets_by_category(c.id) if c.max_concurrent else 0
+        entries.append({"category": c, "open_count": open_count})
+    discord_categories = await fetch_guild_categories(guild_id)
+    roles = await fetch_guild_roles(guild_id)
+    return templates.TemplateResponse(request, "dash_ticket_kategorien.html", {
+        "user": _current_user(request), "messages": [],
+        "guild": {"id": guild_id, "name": guild["name"]},
+        "categories": entries, "discord_categories": discord_categories, "roles": roles,
+    })
+
+@server_extra_router.post("/dashboard/{guild_id}/tickets/kategorien")
+async def ticket_categories_add(
+    request: Request, guild_id: int, name: str = Form(...), emoji: str = Form("🎫"),
+    description: str = Form(""), channel_category_id: int = Form(0),
+    max_concurrent: int = Form(0), ping_role_id: int = Form(0),
+):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await create_ticket_category(
+        guild_id, name=name, emoji=emoji or "🎫", description=description,
+        channel_category_id=channel_category_id, max_concurrent=max(0, max_concurrent),
+        ping_role_id=ping_role_id,
+    )
+    return RedirectResponse(f"/dashboard/{guild_id}/tickets/kategorien", status_code=303)
+
+@server_extra_router.post("/dashboard/{guild_id}/tickets/kategorien/{category_id}/loeschen")
+async def ticket_categories_remove(request: Request, guild_id: int, category_id: int):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await delete_ticket_category(category_id)
+    return RedirectResponse(f"/dashboard/{guild_id}/tickets/kategorien", status_code=303)
+
+@server_extra_router.get("/dashboard/{guild_id}/tickets/panel-senden", response_class=HTMLResponse)
+async def ticket_panel_send_page(request: Request, guild_id: int):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    categories = await get_ticket_categories(guild_id)
+    channels = await fetch_guild_text_channels(guild_id)
+    return templates.TemplateResponse(request, "dash_ticket_panel_senden.html", {
+        "user": _current_user(request), "messages": [],
+        "guild": {"id": guild_id, "name": guild["name"]},
+        "categories": categories, "channels": channels,
+        "designs": ["standard", "minimal", "premium", "dark"],
+    })
+
+@server_extra_router.post("/dashboard/{guild_id}/tickets/panel-senden")
+async def ticket_panel_send_action(request: Request, guild_id: int, channel_id: int = Form(...),
+                                    design: str = Form("standard")):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    ok = await send_ticket_panel(guild_id, channel_id, design)
+    categories = await get_ticket_categories(guild_id)
+    channels = await fetch_guild_text_channels(guild_id)
+    return templates.TemplateResponse(request, "dash_ticket_panel_senden.html", {
+        "user": _current_user(request),
+        "guild": {"id": guild_id, "name": guild["name"]},
+        "categories": categories, "channels": channels,
+        "designs": ["standard", "minimal", "premium", "dark"],
+        "messages": [{"type": "success" if ok else "error",
+                      "text": "Panel gesendet." if ok else "Senden fehlgeschlagen (Berechtigung des Bots prüfen)."}],
+    })
+
+# ---------- Willkommen/Abschied (Dashboard) ----------
+
+@server_extra_router.get("/dashboard/{guild_id}/willkommen", response_class=HTMLResponse)
+async def welcome_page(request: Request, guild_id: int):
+    denied, guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    cfg_row = await get_welcome_config(guild_id)
+    channels = await fetch_guild_text_channels(guild_id)
+    return templates.TemplateResponse(request, "dash_willkommen.html", {
+        "user": _current_user(request), "messages": [],
+        "guild": {"id": guild_id, "name": guild["name"]},
+        "config": cfg_row, "channels": channels,
+    })
+
+@server_extra_router.post("/dashboard/{guild_id}/willkommen")
+async def welcome_save(
+    request: Request, guild_id: int,
+    welcome_enabled: str = Form(""), welcome_channel_id: int = Form(0), welcome_message: str = Form(""),
+    goodbye_enabled: str = Form(""), goodbye_channel_id: int = Form(0), goodbye_message: str = Form(""),
+):
+    denied, _guild = await _require_guild_admin(request, guild_id)
+    if denied:
+        return denied
+    await set_welcome_settings(
+        guild_id,
+        welcome_enabled=welcome_enabled == "on", welcome_channel_id=welcome_channel_id,
+        welcome_message=welcome_message,
+        goodbye_enabled=goodbye_enabled == "on", goodbye_channel_id=goodbye_channel_id,
+        goodbye_message=goodbye_message,
+    )
+    return RedirectResponse(f"/dashboard/{guild_id}/willkommen?saved=1", status_code=303)
