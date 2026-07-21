@@ -227,3 +227,72 @@ async def set_member_nickname(guild_id: int, user_id: int, nickname: str) -> boo
             json={"nick": nickname or None},
         )
         return resp.status_code == 200
+
+async def send_ticket_panel(guild_id: int, channel_id: int, design: str = "standard") -> bool:
+    """Sendet das Ticket-Panel (Embed + Dropdown/Button) direkt per Discord-REST-API
+    -- braucht dafür NICHT den Bot-Prozess, da wir schon den Bot-Token haben.
+    custom_id "ticket_type_select" bzw. "ticket_create_button" matcht exakt die
+    IDs, auf die bot/cogs/tickets.py als persistente Views lauscht."""
+    from bot.utils.db_helpers import get_ticket_categories, count_open_tickets_by_category
+
+    if not DISCORD_TOKEN:
+        return False
+
+    categories = await get_ticket_categories(guild_id)
+
+    design_colors = {"standard": 0x5865F2, "minimal": 0x99AAB5, "premium": 0xF1C40F, "dark": 0x1E1E28}
+    design_emojis = {"standard": "🎫", "minimal": "✉️", "premium": "⭐", "dark": "🌑"}
+    color = design_colors.get(design, design_colors["standard"])
+    emoji = design_emojis.get(design, "🎫")
+
+    fields = []
+    if categories:
+        lines = []
+        for c in categories[:25]:
+            line = f"{c.emoji} **{c.name}**"
+            if c.description:
+                line += f"\n> {c.description}"
+            if c.max_concurrent:
+                open_count = await count_open_tickets_by_category(c.id)
+                available = max(0, c.max_concurrent - open_count)
+                line += f"\n> Verfügbar: {available}/{c.max_concurrent}"
+            lines.append(line)
+        fields.append({"name": "📂 Verfügbare Setups", "value": "\n".join(lines), "inline": False})
+    if design == "premium":
+        fields.append({"name": "✨ Was dich erwartet",
+                        "value": "Ein privater Kanal nur für dich und unser Team.", "inline": False})
+
+    embed = {
+        "title": f"{emoji} Support-Ticket",
+        "description": "Klicke unten, um ein Ticket zu erstellen.\n" + ("─" * 28),
+        "color": color,
+        "fields": fields,
+        "footer": {"text": "Support-Team"},
+    }
+
+    if categories:
+        options = []
+        for c in categories[:25]:
+            opt = {"label": c.name[:100], "value": str(c.id)}
+            if c.description:
+                opt["description"] = c.description[:100]
+            if c.emoji:
+                opt["emoji"] = {"name": c.emoji}
+            options.append(opt)
+        components = [{"type": 1, "components": [{
+            "type": 3, "custom_id": "ticket_type_select", "placeholder": "…",
+            "min_values": 1, "max_values": 1, "options": options,
+        }]}]
+    else:
+        components = [{"type": 1, "components": [{
+            "type": 2, "style": 1, "label": "Ticket erstellen",
+            "emoji": {"name": "🎫"}, "custom_id": "ticket_create_button",
+        }]}]
+
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages",
+            headers=headers, json={"embeds": [embed], "components": components},
+        )
+    return resp.status_code == 200
