@@ -1,29 +1,36 @@
-{% extends "base.html" %}
-{% block title %}Impressum{% endblock %}
-{% block content %}
-<a href="/" class="back-link">Zurück</a>
-<h1>Impressum</h1>
-
-<p style="color:#9297ab; font-size:13px;">
-    Kein Rechtsberatungs-Ersatz. Angaben orientiert an §5 ECG / §25 Mediengesetz (Österreich).
-    Vor öffentlichem Betrieb bei Bedarf rechtlich prüfen lassen.
-</p>
-
-<h2>Diensteanbieter</h2>
-<p>{% if operator_username %}{{ operator_username }}{% else %}<em>[noch nicht hinterlegt]</em>{% endif %}</p>
-
-<h2>Kontakt</h2>
-<p>
-    {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" style="color:#f5f6fa; text-decoration:underline;">{{ operator_invite }}</a>
-    {% else %}
-    <em>[noch nicht hinterlegt]</em>
-    {% endif %}
-</p>
-
-<h2>Haftungsausschluss</h2>
-<p style="font-size:14px; color:#9297ab;">
-    Für Inhalte externer, verlinkter Seiten wird keine Haftung übernommen — verantwortlich sind
-    ausschließlich deren Betreiber.
-</p>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="content">
+        <div class="login-box">
+            <h1>Admin-Panel</h1>
+            <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            <form method="post" action="/admin/login" class="settings-form" style="text-align:left; margin-top:20px;">
+                <div class="field">
+                    <label for="username">Benutzername</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="field">
+                    <label for="password">Passwort</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn">Anmelden</button>
+            </form>
+            {% if operator_invite %}
+            <p class="small-print">
+                <a href="{{ operator_invite }}" target="_blank" style="color:#9297ab;">Unserem Discord beitreten</a>
+            </p>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>

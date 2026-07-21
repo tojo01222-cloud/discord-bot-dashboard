@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Gewinnspiele — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Gewinnspiele — {{ guild.name }}</h1>
+
+{% if not giveaways %}
+<p style="color:#9297ab;">Noch keine Gewinnspiele gestartet (siehe <code>/giveaway start</code> in Discord).</p>
+{% else %}
+{% for g in giveaways %}
+<div style="padding:14px 0; border-bottom:1px solid #262838;">
+    <strong>{{ g.name }}</strong>
+    {% if g.ended %}
+    <span class="flash" style="padding:3px 10px; margin:0; background:#262838;">Beendet</span>
+    {% if g.winner_id %}<span style="color:#9297ab;"> — Gewinner: Discord-ID {{ g.winner_id }}</span>{% endif %}
+    {% else %}
+    <span class="flash flash-success" style="padding:3px 10px; margin:0;">Läuft</span>
+    <span style="color:#9297ab;"> — endet {{ g.ends_at.strftime('%d.%m.%Y %H:%M') }} UTC</span>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

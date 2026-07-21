@@ -1,43 +1,50 @@
 {% extends "base.html" %}
-{% block title %}Datenschutzerklärung{% endblock %}
+{% block title %}Team — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/" class="back-link">← Zurück</a>
-<h1>Datenschutzerklärung</h1>
-<p style="color:#9297ab; font-size:13px;">
-    Dies ist ein technischer Entwurf, KEINE Rechtsberatung. Vor dem echten Betrieb
-    (insbesondere mit Nutzern aus der EU) sollte diese Seite von einer Anwältin/einem
-    Anwalt oder einem Datenschutzdienst geprüft/erstellt werden.
-</p>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Team — {{ guild.name }}</h1>
 
-<h2>Welche Daten werden gespeichert?</h2>
-<ul>
-    <li>Deine Discord-User-ID, dein Discord-Benutzername und dein Avatar-Bild</li>
-    <li>Eine intern erzeugte, zufällige Nutzer-ID für unser System</li>
-    <li>Zeitpunkt deines ersten und letzten Logins</li>
-    <li>Die Server-Einstellungen, die du über dieses Dashboard änderst</li>
-    <li>Moderations- und Support-Daten auf den Servern, wo der Bot aktiv ist: z.B. Verwarnungen,
-        Ticket-Verläufe (wenn du im Support-Ticket-System Hilfe angefragt hast), Team-Rang-Historie</li>
-</ul>
+<h2 style="margin-top:24px;">Ränge (niedrig → hoch)</h2>
+{% if not ranks %}
+<p style="color:#9297ab;">Noch keine Team-Ränge eingerichtet.</p>
+{% else %}
+{% for r in ranks %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
+    <span>Position {{ r.position }} — Rollen-ID {{ r.role_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/team/raenge/{{ r.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% endfor %}
+{% endif %}
 
-<h2>Warum?</h2>
-<p>
-    Die Login-Daten werden benötigt, um dir nach dem Login die richtigen Server anzuzeigen
-    und deine Einstellungen zu speichern. Die Moderations- und Support-Daten dienen
-    ausschließlich dazu, dass sich Team-Mitglieder auf dem jeweiligen Server einen Überblick
-    verschaffen können (z.B. frühere Verwarnungen, laufende/abgeschlossene Support-Tickets) —
-    sie werden nicht an Dritte weitergegeben, nicht verkauft und nicht für Werbung oder
-    ähnliche Zwecke genutzt.
-</p>
+<form method="post" action="/dashboard/{{ guild.id }}/team/raenge" class="settings-form" style="margin-top:20px;">
+    <div class="field">
+        <label for="role_id">Neuer Rang (wird am Ende der Hierarchie eingefügt)</label>
+        <select name="role_id" id="role_id">
+            {% for role in roles %}
+            <option value="{{ role.id }}">{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-small">Rang hinzufügen</button>
+</form>
 
-<h2>Wie lange?</h2>
-<p>
-    Bis du dein Konto löschen lässt (kontaktiere dazu den Server-Betreiber) oder die
-    Daten aus anderem Grund gelöscht werden.
-</p>
-
-<h2>Weitergabe an Dritte?</h2>
-<p>Nein, außer an Discord selbst im Rahmen des Login-Vorgangs (OAuth2).</p>
-
-<h2>Kontakt bei Fragen zum Datenschutz</h2>
-<p>Über den Support auf unserem Discord-Server (siehe <a href="/impressum" style="color:#5865f2;">Impressum</a>).</p>
+<h2 style="margin-top:40px;">Mitglieder ({{ members|length }})</h2>
+{% if not members %}
+<p style="color:#9297ab;">Das Team ist aktuell leer.</p>
+{% else %}
+<div class="admin-card">
+    {% for m in members %}
+    <div style="padding:8px 0; border-bottom:1px solid #262838;">
+        Discord-ID {{ m.user_id }} —
+        {% if m.current_rank_id and m.current_rank_id in ranks_by_id %}
+        Rang-Position {{ ranks_by_id[m.current_rank_id].position }}
+        {% else %}
+        kein Rang zugewiesen
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

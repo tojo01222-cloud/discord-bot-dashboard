@@ -1,105 +1,75 @@
-{% extends "base.html" %}
-{% block title %}Moderation — {{ guild.name }}{% endblock %}
-{% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Moderation — {{ guild.name }}</h1>
-<p style="font-size:13px;">
-    Kick/Bann/Nickname/Autorole-Aktionen laufen direkt über die Discord-API, ohne die
-    Rollen-Hierarchie-Prüfung der entsprechenden Discord-Befehle. Der Zugriff hier ist über
-    deine "Server verwalten"-Berechtigung für genau diesen Server abgesichert.
-</p>
-
-<div class="settings-form">
-    <div>
-        <h2>Kick</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/kick" class="settings-form">
-            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
-            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
-            <button type="submit" class="btn btn-small">Kicken</button>
-        </form>
-    </div>
-    <div>
-        <h2>Bann</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/ban" class="settings-form">
-            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
-            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
-            <button type="submit" class="btn btn-small">Bannen</button>
-        </form>
-    </div>
-    <div>
-        <h2>Verwarnung</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/warn" class="settings-form">
-            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
-            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
-            <button type="submit" class="btn btn-small">Verwarnen</button>
-        </form>
-    </div>
-
-    <div>
-        <h2>🤖 Autorole an alle vergeben</h2>
-        <p style="font-size:12px;">Vergibt eine Rolle rückwirkend an ALLE aktuellen (menschlichen) Mitglieder.</p>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/autorole-all" class="settings-form">
-            <div class="field">
-                <label>Rolle</label>
-                <select name="role_id">
-                    {% for role in roles %}
-                    <option value="{{ role.id }}">{{ role.name }}</option>
-                    {% endfor %}
-                </select>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Admin-Panel{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <div class="admin-layout">
+        <nav class="admin-sidebar">
+            <div class="admin-brand">🛡️ Admin-Panel</div>
+            <a href="/servers" style="display:block; margin:0 10px 10px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.04); font-size:13px;">← Zurück zum Dashboard</a>
+            <a href="/admin">📊 Übersicht</a>
+            <a href="/admin/stats">📈 Statistiken</a>
+            <a href="/admin/servers">🌐 Server</a>
+            <a href="/admin/broadcast">📢 Ankündigungen</a>
+            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
+            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
+            <a href="/admin/users">👥 Dashboard-User</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
+            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
+            {% endif %}
+            <a href="/admin/system">💻 System</a>
+            <a href="/admin/news">📰 News</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/sperrliste">🚫 Sperrliste</a>
+            <a href="/admin/login-historie">🔐 Login-Historie</a>
+            <a href="/admin/fehlerprotokoll">🐛 Fehlerprotokoll</a>
+            <a href="/admin/gesundheitscheck">🩺 Gesundheitscheck</a>
+            <a href="/admin/api-statistik">📡 API-Statistik</a>
+            <a href="/admin/aktivste-server">🏆 Aktivste Server</a>
+            <a href="/admin/server-tags">🏷️ Server-Tags</a>
+            <a href="/admin/changelog">📝 Changelog</a>
+            <a href="/admin/feature-flags">🎛️ Feature-Flags</a>
+            <a href="/admin/geplante-wartung">🗓️ Geplante Wartung</a>
+            <a href="/admin/rollen-vorlagen">🎭 Rollen-Vorlagen</a>
+            <a href="/admin/backups">📦 Backups</a>
+            {% endif %}
+            <a href="/admin/feedback">💬 Feedback</a>
+            <a href="/admin/2fa">🔒 2FA</a>
+            {% if admin and admin.is_superadmin %}
+            <a href="/admin/fehlerprotokoll">🐞 Fehlerprotokoll</a>
+            <a href="/admin/gesundheitscheck">🩺 Gesundheitscheck</a>
+            <a href="/admin/api-statistik">📶 API-Statistik</a>
+            <a href="/admin/aktivste-server">🏆 Aktivste Server</a>
+            <a href="/admin/server-tags">🏷️ Server-Tags</a>
+            <a href="/admin/changelog">📝 Changelog</a>
+            <a href="/admin/feature-flags">🎛️ Feature-Flags</a>
+            <a href="/admin/geplante-wartung">🗓️ Geplante Wartung</a>
+            <a href="/admin/rollen-vorlagen">🎭 Rollen-Vorlagen</a>
+            <a href="/admin/backups">📦 Backups</a>
+            {% endif %}
+            <a href="/admin/feedback">💬 Feedback</a>
+            <a href="/admin/account">👤 Mein Account</a>
+            <div class="admin-sidebar-footer">
+                <span>{{ admin.username if admin }}</span>
+                {% if operator_invite %}
+                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
+                {% endif %}
+                <a href="/admin/logout">Logout</a>
+                <span style="font-size:11px; opacity:0.7;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}</span>
             </div>
-            <button type="submit" class="btn btn-small btn-pink">An alle vergeben</button>
-        </form>
+        </nav>
+        <main class="admin-content">
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            {% block content %}{% endblock %}
+        </main>
     </div>
-
-    <div>
-        <h2>🐌 Slowmode</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/slowmode" class="settings-form">
-            <div class="field">
-                <label>Kanal</label>
-                <select name="channel_id">
-                    {% for ch in channels %}
-                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="field"><label>Sekunden (0 = aus)</label><input type="number" name="seconds" min="0" max="21600" value="0"></div>
-            <button type="submit" class="btn btn-small">Setzen</button>
-        </form>
-    </div>
-
-    <div>
-        <h2>🔒 Kanal sperren / entsperren</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/lock" class="settings-form" style="margin-bottom:10px;">
-            <div class="field">
-                <label>Kanal</label>
-                <select name="channel_id">
-                    {% for ch in channels %}
-                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <button type="submit" class="btn btn-small btn-ghost">Sperren</button>
-        </form>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/unlock" class="settings-form">
-            <div class="field">
-                <label>Kanal</label>
-                <select name="channel_id">
-                    {% for ch in channels %}
-                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <button type="submit" class="btn btn-small btn-green">Entsperren</button>
-        </form>
-    </div>
-
-    <div>
-        <h2>✏️ Spitzname ändern</h2>
-        <form method="post" action="/dashboard/{{ guild.id }}/moderation/nickname" class="settings-form">
-            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
-            <div class="field"><label>Neuer Spitzname (leer = zurücksetzen)</label><input type="text" name="nickname"></div>
-            <button type="submit" class="btn btn-small">Ändern</button>
-        </form>
-    </div>
-</div>
-{% endblock %}
+</body>
+</html>

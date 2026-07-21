@@ -1,29 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Apply for our Team{% endblock %}
+{% block title %}Datenschutzerklärung{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'apply_title') }}</h1>
-    <p>{{ wt(site_lang, 'apply_subtitle') }}</p>
-    {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 {{ wt(site_lang, 'apply_btn') }}</a>
-    {% endif %}
-</div>
+<a href="/" class="back-link">← Zurück</a>
+<h1>Datenschutzerklärung</h1>
+<p style="color:#9297ab; font-size:13px;">
+    Dies ist ein technischer Entwurf, KEINE Rechtsberatung. Vor dem echten Betrieb
+    (insbesondere mit Nutzern aus der EU) sollte diese Seite von einer Anwältin/einem
+    Anwalt oder einem Datenschutzdienst geprüft/erstellt werden.
+</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">1️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step1_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step1_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">2️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step2_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step2_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">3️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step3_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step3_desc') }}</p>
-    </div>
-</div>
+<h2>Welche Daten werden gespeichert?</h2>
+<ul>
+    <li>Deine Discord-User-ID, dein Discord-Benutzername und dein Avatar-Bild</li>
+    <li>Eine intern erzeugte, zufällige Nutzer-ID für unser System</li>
+    <li>Zeitpunkt deines ersten und letzten Logins</li>
+    <li>Die Server-Einstellungen, die du über dieses Dashboard änderst</li>
+    <li>Moderations- und Support-Daten auf den Servern, wo der Bot aktiv ist: z.B. Verwarnungen,
+        Ticket-Verläufe (wenn du im Support-Ticket-System Hilfe angefragt hast), Team-Rang-Historie</li>
+</ul>
+
+<h2>Warum?</h2>
+<p>
+    Die Login-Daten werden benötigt, um dir nach dem Login die richtigen Server anzuzeigen
+    und deine Einstellungen zu speichern. Die Moderations- und Support-Daten dienen
+    ausschließlich dazu, dass sich Team-Mitglieder auf dem jeweiligen Server einen Überblick
+    verschaffen können (z.B. frühere Verwarnungen, laufende/abgeschlossene Support-Tickets) —
+    sie werden nicht an Dritte weitergegeben, nicht verkauft und nicht für Werbung oder
+    ähnliche Zwecke genutzt.
+</p>
+
+<h2>Wie lange?</h2>
+<p>
+    Bis du dein Konto löschen lässt (kontaktiere dazu den Server-Betreiber) oder die
+    Daten aus anderem Grund gelöscht werden.
+</p>
+
+<h2>Weitergabe an Dritte?</h2>
+<p>Nein, außer an Discord selbst im Rahmen des Login-Vorgangs (OAuth2).</p>
+
+<h2>Kontakt bei Fragen zum Datenschutz</h2>
+<p>Über den Support auf unserem Discord-Server (siehe <a href="/impressum" style="color:#5865f2;">Impressum</a>).</p>
 {% endblock %}

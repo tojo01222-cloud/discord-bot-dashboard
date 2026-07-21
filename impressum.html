@@ -1,45 +1,16 @@
 {% extends "admin_base.html" %}
-{% block title %}News — Admin-Panel{% endblock %}
+{% block title %}Feature-Flags — Admin-Panel{% endblock %}
 {% block content %}
-<h1>News verwalten</h1>
-<p style="color:#9297ab; font-size:13px;">Wird öffentlich unter <code>/news</code> angezeigt.</p>
+<h1>Feature-Flags</h1>
+<p style="color:#9297ab; font-size:13px;">Globale Ein/Aus-Schalter für einzelne Bot-Module, ohne Code-Änderung.</p>
 
-<div class="admin-card">
-    <h2 style="margin-bottom:12px;">Neuer Beitrag</h2>
-    <form method="post" action="/admin/news" class="admin-form">
-        <div>
-            <label for="title">Titel</label>
-            <input type="text" id="title" name="title" required>
-        </div>
-        <div>
-            <label for="content">Inhalt</label>
-            <textarea id="content" name="content" required></textarea>
-        </div>
-        <button type="submit" class="btn btn-small">Veröffentlichen</button>
-    </form>
-</div>
-
-{% for post in posts %}
-<div class="admin-card">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-            <strong>{{ post.title }}</strong>
-            <span style="color:#9297ab; font-size:12px;"> — {{ post.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
-            <p style="margin-top:8px;">{{ post.content }}</p>
-        </div>
-    </div>
-    <div style="display:flex; gap:10px; margin-top:10px;">
-        <form method="post" action="/admin/news/{{ post.id }}/toggle">
-            <input type="hidden" name="published" value="{{ '' if post.published else 'on' }}">
-            <button type="submit" class="btn btn-small btn-ghost">{{ "Verbergen" if post.published else "Veröffentlichen" }}</button>
-        </form>
-        <form method="post" action="/admin/news/{{ post.id }}/delete"
-              onsubmit="return confirm('Diesen Beitrag wirklich löschen?');">
-            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-        </form>
-    </div>
-</div>
-{% else %}
-<p style="color:#9297ab;">Noch keine News-Beiträge.</p>
-{% endfor %}
+<form method="post" action="/admin/feature-flags" class="admin-form">
+    {% for key in known_keys %}
+    <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+        <input type="checkbox" name="flag_{{ key }}" value="on" {% if flags_by_key.get(key, True) %}checked{% endif %}>
+        {{ key }}
+    </label>
+    {% endfor %}
+    <button type="submit" class="btn btn-small">Speichern</button>
+</form>
 {% endblock %}

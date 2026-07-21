@@ -40,6 +40,15 @@
 .admin-sidebar-footer a { padding: 0; color: #ff8dc6; }
 
 .admin-content { flex: 1; padding: 32px 40px; max-width: 920px; }
+@media (max-width: 720px) {
+    .admin-layout { flex-direction: column; }
+    .admin-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 12px; gap: 4px; }
+    .admin-brand { width: 100%; padding: 0 8px 8px; }
+    .admin-sidebar a { padding: 8px 12px; font-size: 13px; }
+    .admin-sidebar-footer { width: 100%; margin-top: 8px; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+    .admin-content { padding: 20px 16px; max-width: 100%; }
+    .admin-stat-grid { grid-template-columns: 1fr 1fr; }
+}
 .admin-content h1 {
     font-size: 24px; margin-bottom: 20px; font-weight: 800;
     background: linear-gradient(90deg, #fff, #b6c0ff);

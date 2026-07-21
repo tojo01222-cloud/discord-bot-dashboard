@@ -1,23 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Gewinnspiele — {{ guild.name }}{% endblock %}
+{% block title %}Willkommen & Abschied — {{ guild.name }}{% endblock %}
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Gewinnspiele — {{ guild.name }}</h1>
+<h1>Willkommen & Abschied — {{ guild.name }}</h1>
+<p style="font-size:13px;">Platzhalter: <code>{user}</code>, <code>{server}</code>. Leerer Text = deaktiviert.</p>
 
-{% if not giveaways %}
-<p style="color:#9297ab;">Noch keine Gewinnspiele gestartet (siehe <code>/giveaway start</code> in Discord).</p>
-{% else %}
-{% for g in giveaways %}
-<div style="padding:14px 0; border-bottom:1px solid #262838;">
-    <strong>{{ g.name }}</strong>
-    {% if g.ended %}
-    <span class="flash" style="padding:3px 10px; margin:0; background:#262838;">Beendet</span>
-    {% if g.winner_id %}<span style="color:#9297ab;"> — Gewinner: Discord-ID {{ g.winner_id }}</span>{% endif %}
-    {% else %}
-    <span class="flash flash-success" style="padding:3px 10px; margin:0;">Läuft</span>
-    <span style="color:#9297ab;"> — endet {{ g.ends_at.strftime('%d.%m.%Y %H:%M') }} UTC</span>
-    {% endif %}
-</div>
-{% endfor %}
-{% endif %}
+<form method="post" action="/dashboard/{{ guild.id }}/willkommen" class="settings-form">
+    <h2>👋 Willkommen</h2>
+    <div class="field">
+        <label>Kanal</label>
+        <select name="welcome_channel_id">
+            <option value="0">— kein Kanal —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if cfg.welcome_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>Nachricht</label>
+        <input type="text" name="welcome_message" value="{{ cfg.welcome_message }}" placeholder="z.B. Willkommen {user} auf {server}!">
+    </div>
+
+    <h2 style="margin-top:24px;">👋 Abschied</h2>
+    <div class="field">
+        <label>Kanal</label>
+        <select name="leave_channel_id">
+            <option value="0">— kein Kanal —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if cfg.leave_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>Nachricht</label>
+        <input type="text" name="leave_message" value="{{ cfg.leave_message }}" placeholder="z.B. {user} hat den Server verlassen.">
+    </div>
+
+    <button type="submit" class="btn">Speichern</button>
+</form>
 {% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Suche — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Suche — {{ guild.name }}</h1>
+
+<form method="get" action="/dashboard/{{ guild.id }}/suche" style="margin-bottom:24px;">
+    <input type="text" name="q" value="{{ q }}" placeholder="Discord-ID oder Strafgrund suchen..."
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;min-width:280px;">
+    <button type="submit" class="btn btn-small">Suchen</button>
+</form>
+
+{% if q %}
+<h2>👥 Team-Mitglieder ({{ results.members|length }})</h2>
+{% for m in results.members %}
+<div style="padding:8px 0; border-bottom:1px solid #262838;">Discord-ID {{ m.user_id }}</div>
+{% else %}
+<p style="color:#9297ab;">Keine Treffer.</p>
+{% endfor %}
+
+<h2 style="margin-top:24px;">🎫 Tickets ({{ results.tickets|length }})</h2>
+{% for t in results.tickets %}
+<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ t.status }} — Ersteller {{ t.creator_id }} — {{ t.created_at.strftime('%d.%m.%Y') }}</div>
+{% else %}
+<p style="color:#9297ab;">Keine Treffer.</p>
+{% endfor %}
+
+<h2 style="margin-top:24px;">⚠️ Strafen ({{ results.punishments|length }})</h2>
+{% for p in results.punishments %}
+<div style="padding:8px 0; border-bottom:1px solid #262838;">{{ p.type }} — {{ p.user_id }} — {{ p.reason }}</div>
+{% else %}
+<p style="color:#9297ab;">Keine Treffer.</p>
+{% endfor %}
+{% endif %}
+{% endblock %}

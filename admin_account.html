@@ -1,13 +1,18 @@
-{% extends "admin_base.html" %}
-{% block title %}Statistiken — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Reaction-Roles — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Statistiken (alle Server)</h1>
-<div class="admin-stat-grid">
-    <div class="admin-stat"><div class="value">{{ stats.guild_count }}</div><div class="label">Server</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.total_members }}</div><div class="label">Mitglieder gesamt</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.dashboard_user_count }}</div><div class="label">Dashboard-User</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.punishment_count }}</div><div class="label">Strafen gesamt</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.open_ticket_count }}</div><div class="label">Offene Tickets</div></div>
-    <div class="admin-stat"><div class="value">{{ stats.pending_application_count }}</div><div class="label">Offene Bewerbungen</div></div>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Reaction-Roles — {{ guild.name }}</h1>
+<p style="font-size:13px;">Neue Reaction-Roles werden über <code>/reactionrole add</code> in Discord eingerichtet (dafür wird die Ziel-Nachricht gebraucht) — hier kannst du bestehende einsehen und entfernen.</p>
+
+{% for e in entries %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
+    <span>{{ e.emoji }} → Rollen-ID {{ e.role_id }} (Nachricht {{ e.message_id }})</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/reactionroles/{{ e.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
 </div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Reaction-Roles eingerichtet.</p>
+{% endfor %}
 {% endblock %}

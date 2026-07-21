@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Verifizierung — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Verifizierung — {{ guild.name }}</h1>
+<p style="font-size:13px;">Neue Mitglieder müssen erst auf einen Button klicken, bevor sie eine Rolle bekommen.</p>
+
+<form method="post" action="/dashboard/{{ guild.id }}/verifizierung" class="settings-form">
+    <div class="field">
+        <label><input type="checkbox" name="enabled" value="on" {% if cfg.enabled %}checked{% endif %}> Verifizierung aktiv</label>
+    </div>
+    <div class="field">
+        <label>Kanal für den Verifizierungs-Button</label>
+        <select name="channel_id">
+            <option value="0">— kein Kanal —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if cfg.channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>Rolle nach Verifizierung</label>
+        <select name="verified_role_id">
+            <option value="0">— keine Rolle —</option>
+            {% for role in roles %}
+            <option value="{{ role.id }}" {% if cfg.verified_role_id == role.id|int %}selected{% endif %}>{{ role.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn">Speichern</button>
+</form>
+{% endblock %}

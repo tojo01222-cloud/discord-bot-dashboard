@@ -1,45 +1,23 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Admin-Panel{% endblock %}</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="/static/admin.css">
-</head>
-<body>
-    <div class="admin-layout">
-        <nav class="admin-sidebar">
-            <div class="admin-brand">🛡️ Admin-Panel</div>
-            <a href="/admin">📊 Übersicht</a>
-            <a href="/admin/stats">📈 Statistiken</a>
-            <a href="/admin/servers">🌐 Server</a>
-            <a href="/admin/broadcast">📢 Ankündigungen</a>
-            <a href="/admin/announcements">🗂️ Ankündigungs-Historie</a>
-            <a href="/admin/bot-control">🔧 Bot-Steuerung</a>
-            <a href="/admin/users">👥 Dashboard-User</a>
-            {% if admin and admin.is_superadmin %}
-            <a href="/admin/permissions">🔑 Rechteverwaltung</a>
-            <a href="/admin/groups">👨‍👩‍👧 Berechtigungsgruppen</a>
-            {% endif %}
-            <a href="/admin/system">💻 System</a>
-            <a href="/admin/news">📰 News</a>
-            <a href="/admin/account">👤 Mein Account</a>
-            <div class="admin-sidebar-footer">
-                <span>{{ admin.username if admin }}</span>
-                {% if operator_invite %}
-                <a href="{{ operator_invite }}" target="_blank">💬 Discord</a>
-                {% endif %}
-                <a href="/admin/logout">Logout</a>
-                <span style="font-size:11px; opacity:0.7;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}</span>
-            </div>
-        </nav>
-        <main class="admin-content">
-            {% for message in messages %}
-            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
-            {% endfor %}
-            {% block content %}{% endblock %}
-        </main>
-    </div>
-</body>
-</html>
+{% extends "admin_base.html" %}
+{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Ankündigungs-Historie</h1>
+<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+
+{% if not announcements %}
+<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
+{% else %}
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
+        {% for a in announcements %}
+        <tr>
+            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
+            <td>{{ a.guild_count }}</td>
+            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,37 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Werbung — {{ guild.name }}{% endblock %}
+{% block title %}Audit-Log — {{ guild.name }}{% endblock %}
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Werbung & Partner — {{ guild.name }}</h1>
+<h1>Audit-Log — {{ guild.name }}</h1>
+<p style="font-size:13px;">Protokolliert Änderungen, die übers Dashboard vorgenommen wurden.</p>
 
-<form method="post" action="/dashboard/{{ guild.id }}/werbung/kanal" class="settings-form">
-    <div class="field">
-        <label>Werbe-Kanal</label>
-        <select name="channel_id">
-            <option value="0">— kein Kanal ausgewählt —</option>
-            {% for ch in channels %}
-            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Speichern</button>
-</form>
-
-<h2 style="margin-top:32px;">Partner ({{ partners|length }})</h2>
-{% for p in partners %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span><strong>{{ p.name }}</strong> — <a href="{{ p.invite_link }}" target="_blank">{{ p.invite_link }}</a></span>
-    <form method="post" action="/dashboard/{{ guild.id }}/werbung/partner/{{ p.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
-</div>
+{% if not entries %}
+<p style="color:#9297ab;">Noch keine Einträge.</p>
 {% else %}
-<p style="color:#9297ab;">Noch keine Partner eingetragen.</p>
-{% endfor %}
-
-<form method="post" action="/dashboard/{{ guild.id }}/werbung/partner" class="settings-form" style="margin-top:20px;">
-    <div class="field"><label>Name</label><input type="text" name="name" required></div>
-    <div class="field"><label>Einladungslink</label><input type="text" name="invite_link" required></div>
-    <button type="submit" class="btn btn-small">Partner hinzufügen</button>
-</form>
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
+    <table class="admin-table">
+        <tr><th>Wer</th><th>Aktion</th><th>Wann</th></tr>
+        {% for e in entries %}
+        <tr>
+            <td>{{ e.dashboard_username }}</td>
+            <td>{{ e.action }}</td>
+            <td>{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,25 @@
+{% extends "admin_base.html" %}
+{% block title %}Server-Tags — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Server-Tags</h1>
+
+{% for g in guilds %}
+{% set guild_tags = tags | selectattr('guild_id', 'equalto', g.guild_id) | list %}
+<div class="admin-card">
+    <strong>{{ g.name }}</strong>
+    <div style="margin-top:6px;">
+        {% for t in guild_tags %}
+        <span class="perm-tag perm-tag-on">{{ t.tag }}</span>
+        <form method="post" action="/admin/server-tags/{{ t.id }}/entfernen" style="display:inline;">
+            <button type="submit" class="btn btn-small btn-ghost" style="padding:2px 8px; font-size:11px;">×</button>
+        </form>
+        {% endfor %}
+    </div>
+    <form method="post" action="/admin/server-tags" style="margin-top:8px; display:flex; gap:8px;">
+        <input type="hidden" name="guild_id" value="{{ g.guild_id }}">
+        <input type="text" name="tag" placeholder="z.B. Premium" style="background:#0d0819;border:1px solid #2c2148;color:#f5f6fa;padding:6px 10px;border-radius:6px;">
+        <button type="submit" class="btn btn-small">+ Tag</button>
+    </form>
+</div>
+{% endfor %}
+{% endblock %}

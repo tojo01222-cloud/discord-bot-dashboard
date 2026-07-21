@@ -1,28 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Anti-Nuke-Whitelist — {{ guild.name }}{% endblock %}
+{% block title %}Leaderboard — {{ guild.name }}{% endblock %}
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Anti-Nuke-Whitelist — {{ guild.name }}</h1>
-<p style="color:#9297ab; font-size:13px;">User auf dieser Liste lösen die Anti-Nuke-Erkennung nie aus (der Server-Owner ist immer automatisch ausgenommen).</p>
+<h1>Leaderboard — {{ guild.name }}</h1>
 
-{% if not trusted %}
-<p style="color:#9297ab;">Die Liste ist aktuell leer.</p>
+{% if not top %}
+<p style="color:#9297ab;">Noch keine XP-Daten.</p>
 {% else %}
-{% for t in trusted %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
-    <span>Discord-ID {{ t.user_id }}</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste/{{ t.user_id }}/entfernen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
+<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
+    <table class="admin-table">
+        <tr><th>#</th><th>User</th><th>Level</th><th>XP</th></tr>
+        {% for entry in top %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ entry.user_id }}</td>
+            <td>{{ entry.level }}</td>
+            <td>{{ entry.xp }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
-{% endfor %}
 {% endif %}
-
-<form method="post" action="/dashboard/{{ guild.id }}/vertrauensliste" class="settings-form" style="margin-top:24px;">
-    <div class="field">
-        <label for="discord_id">Discord-User-ID</label>
-        <input type="text" id="discord_id" name="discord_id" required placeholder="z.B. 123456789012345678">
-    </div>
-    <button type="submit" class="btn btn-small">Hinzufügen</button>
-</form>
 {% endblock %}

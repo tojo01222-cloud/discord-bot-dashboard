@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Urheberrecht{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← Zurück</a>
+<h1>Urheberrecht</h1>
+
+<p style="color:#9297ab; font-size:13px;">
+    Kein Rechtsberatungs-Ersatz. Angaben orientiert am österreichischen Urheberrechtsgesetz (UrhG).
+    Vor öffentlichem Betrieb bei Bedarf rechtlich prüfen lassen.
+</p>
+
+<h2>Geschützte Inhalte</h2>
+<p>
+    Diese Website, das Server-Dashboard und Admin-Panel, der Discord-Bot selbst sowie die Struktur,
+    Beschreibungen und Funktionsweise seiner Befehle sind urheberrechtlich geschützte Werke
+    im Sinne von <strong>§ 1 UrhG</strong>. Der Quellcode ist zusätzlich als Computerprogramm nach
+    <strong>§ 40a UrhG</strong> geschützt.
+</p>
+
+<h2>Was das bedeutet</h2>
+<p>
+    Ohne Zustimmung des Rechteinhabers sind insbesondere folgende Handlungen nicht gestattet
+    (<strong>§§ 14–18a UrhG</strong>, Verwertungsrechte):
+</p>
+<ul style="color:#9297ab;">
+    <li>Vervielfältigung des Quellcodes, der Dashboard-Oberfläche oder der Bot-Funktionen</li>
+    <li>Verbreitung, Weitergabe oder Weiterverkauf als eigenes Produkt</li>
+    <li>Öffentliche Zugänglichmachung (z.B. erneutes Hosten unter eigenem Namen)</li>
+    <li>Bearbeitung oder Umgestaltung zur eigenen Nutzung ohne Genehmigung</li>
+</ul>
+
+<h2>Folgen bei Verstoß</h2>
+<p style="color:#9297ab;">
+    Urheberrechtsverletzungen können sowohl zivilrechtliche Ansprüche (Unterlassung, Beseitigung,
+    angemessenes Entgelt und Schadenersatz nach <strong>§§ 86–87 UrhG</strong>) als auch
+    strafrechtliche Folgen (<strong>§ 91 UrhG</strong>) nach sich ziehen.
+</p>
+
+<h2>Kontakt</h2>
+<p>
+    Bei Fragen zur Nutzung oder für eine Lizenzanfrage wende dich an:
+    {% if operator_invite %}
+    <a href="{{ operator_invite }}" target="_blank" style="color:#f5f6fa; text-decoration:underline;">{{ operator_invite }}</a>
+    {% else %}
+    <em>[noch nicht hinterlegt]</em>
+    {% endif %}
+</p>
+
+<p class="small-print" style="margin-top:32px;">
+    © {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}.
+    Alle Rechte vorbehalten.
+</p>
+{% endblock %}

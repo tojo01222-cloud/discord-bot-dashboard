@@ -1,0 +1,21 @@
+{% extends "admin_base.html" %}
+{% block title %}Backups — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Backup-Gesamtübersicht</h1>
+<p style="color:#9297ab; font-size:13px;">Alle Server-Backups über alle Server hinweg (neueste 50).</p>
+
+<div class="admin-card" style="padding:0;">
+    <table class="admin-table">
+        <tr><th>Server-ID</th><th>Backup-ID</th><th>Erstellt am</th></tr>
+        {% for b in backups %}
+        <tr>
+            <td>{{ b.guild_id }}</td>
+            <td>#{{ b.id }}</td>
+            <td>{{ b.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" style="color:#9297ab;">Noch keine Backups vorhanden.</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

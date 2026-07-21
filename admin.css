@@ -1,9 +1,7 @@
 """
 Ein Jinja2 "Context Processor": eine Funktion, die bei JEDEM Template-Rendern
 automatisch mit ausgeführt wird und ihre Rückgabewerte in den Kontext
-mischt. Damit müssen operator_username/operator_invite (für den
-"Discord beitreten"-Link im Footer, siehe base.html) nicht in jeder
-einzelnen Route manuell mitgegeben werden.
+mischt.
 """
 from starlette.requests import Request
 import datetime as dt

@@ -1,32 +1,30 @@
-{% extends "base.html" %}
-{% block title %}Bewerbung{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Zwei-Faktor-Login — Admin-Panel{% endblock %}
 {% block content %}
-<div class="login-box" style="max-width:560px;">
-    <h1>{{ config.welcome_text }}</h1>
+<h1>Zwei-Faktor-Login (2FA)</h1>
 
-    {% if closed %}
-    <p style="color:#9297ab;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
-    {% elif already_applied %}
-    <div class="flash flash-success">Du hast bereits eine offene Bewerbung eingereicht — wir melden uns bei dir!</div>
+<div class="admin-card">
+    <p><strong>Status:</strong> {{ "✅ Aktiv" if enabled else "❌ Inaktiv" }}</p>
+
+    {% if not enabled %}
+    <h2 style="margin-top:16px; margin-bottom:8px;">Einrichten</h2>
+    <p style="color:#9297ab; font-size:13px;">
+        Füge dieses Geheimnis manuell in deine Authenticator-App ein (Google Authenticator, Authy usw.):
+    </p>
+    <code style="display:block; background:#0d0819; padding:10px; border-radius:8px; margin:10px 0; word-break:break-all;">{{ secret }}</code>
+    <p style="color:#9297ab; font-size:12px;">Oder trag diesen Link manuell ein: <code>{{ provisioning_uri }}</code></p>
+
+    <form method="post" action="/admin/2fa/aktivieren" class="admin-form" style="margin-top:16px;">
+        <div>
+            <label for="code">Bestätigungscode aus der App</label>
+            <input type="text" id="code" name="code" required maxlength="6" pattern="[0-9]{6}">
+        </div>
+        <button type="submit" class="btn btn-small">Aktivieren</button>
+    </form>
     {% else %}
-        {% for message in messages %}
-        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
-        {% endfor %}
-
-        {% if not questions %}
-        <p style="color:#9297ab;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
-        {% else %}
-        <form method="post" action="/bewerbung/{{ guild_id }}" class="settings-form" style="text-align:left;">
-            {% for q in questions %}
-            <div class="field">
-                <label for="question_{{ q.id }}">{{ q.question_text }}</label>
-                <textarea id="question_{{ q.id }}" name="question_{{ q.id }}" required rows="3"
-                          style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
-            </div>
-            {% endfor %}
-            <button type="submit" class="btn">Bewerbung abschicken</button>
-        </form>
-        {% endif %}
+    <form method="post" action="/admin/2fa/deaktivieren" style="margin-top:12px;">
+        <button type="submit" class="btn btn-small btn-ghost">2FA deaktivieren</button>
+    </form>
     {% endif %}
 </div>
 {% endblock %}

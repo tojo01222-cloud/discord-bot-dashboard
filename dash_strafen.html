@@ -1,67 +1,50 @@
-{% extends "admin_base.html" %}
-{% block title %}Rechteverwaltung — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Bot Dashboard{% endblock %}
 {% block content %}
-<h1>Rechteverwaltung</h1>
-
-<a href="/admin/groups" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">Berechtigungsgruppen verwalten</a>
-
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Neuen Admin-Account anlegen</h2>
-    <form method="post" action="/admin/create-admin" class="admin-form">
-        <div>
-            <label for="new_username">Benutzername</label>
-            <input type="text" id="new_username" name="username" required>
-        </div>
-        <div>
-            <label for="new_password">Passwort</label>
-            <input type="password" id="new_password" name="password" required>
-        </div>
-        <button type="submit" class="btn btn-small">Account anlegen</button>
-    </form>
-</div>
-
-<div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Bestehende Admins</h2>
-    {% for entry in admins_with_perms %}
-    <div style="padding:14px 0; border-bottom:1px solid #262838;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <strong>{{ entry.user.username }}</strong>
-                {% if entry.user.last_login_at %}
-                <span style="color:#9297ab; font-size:12px;"> — letzter Login: {{ entry.user.last_login_at.strftime('%d.%m.%Y %H:%M') }}</span>
-                {% endif %}
-            </div>
-            {% if not entry.user.is_superadmin %}
-            <form method="post" action="/admin/permissions/{{ entry.user.id }}/delete"
-                  onsubmit="return confirm('Diesen Admin-Account wirklich löschen?');">
-                <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-            </form>
-            {% endif %}
-        </div>
-        {% if entry.user.is_superadmin %}
-        <span class="perm-tag perm-tag-on">Superadmin (alle Rechte)</span>
-        {% else %}
-        {% if entry.groups %}
-        <div style="margin-top:8px; font-size:12px; color:#9297ab;">
-            Gruppen: {% for g in entry.groups %}{{ g.name }}{% if not loop.last %}, {% endif %}{% endfor %}
-        </div>
-        {% endif %}
-        <div style="margin-top:8px;">
-            {% for perm in all_permissions %}
-            <form method="post" action="/admin/permissions/{{ entry.user.id }}/toggle" style="display:inline;">
-                <input type="hidden" name="permission_key" value="{{ perm }}">
-                {% if perm in entry.permissions %}
-                <input type="hidden" name="action" value="revoke">
-                <button type="submit" class="perm-tag perm-tag-on" style="border:none; cursor:pointer;">{{ perm }} (aktiv)</button>
-                {% else %}
-                <input type="hidden" name="action" value="grant">
-                <button type="submit" class="perm-tag perm-tag-off" style="border:none; cursor:pointer;">{{ perm }}</button>
-                {% endif %}
-            </form>
-            {% endfor %}
-        </div>
-        {% endif %}
+<div class="hero">
+    <h1>{{ wt(site_lang, 'landing_title') }}</h1>
+    <p>{{ wt(site_lang, 'landing_subtitle') }}</p>
+    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
+        <a href="/login" class="btn btn-discord">🎮 {{ wt(site_lang, 'landing_btn_dashboard') }}</a>
+        <a href="/admin/login" class="btn btn-ghost">🛡️ {{ wt(site_lang, 'landing_btn_admin') }}</a>
     </div>
-    {% endfor %}
 </div>
+
+<div class="feature-grid">
+    <div class="feature-card">
+        <div class="icon">🛡️</div>
+        <h3>{{ wt(site_lang, 'feature1_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature1_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🎵</div>
+        <h3>{{ wt(site_lang, 'feature2_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature2_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🎫</div>
+        <h3>{{ wt(site_lang, 'feature3_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature3_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">📝</div>
+        <h3>{{ wt(site_lang, 'feature4_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature4_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">📈</div>
+        <h3>{{ wt(site_lang, 'feature5_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature5_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">🌐</div>
+        <h3>{{ wt(site_lang, 'feature6_title') }}</h3>
+        <p>{{ wt(site_lang, 'feature6_desc') }}</p>
+    </div>
+</div>
+
+<p class="small-print" style="text-align:center; margin-top:48px;">
+    <a href="/impressum">Impressum</a> ·
+    <a href="/datenschutz">Datenschutz</a>
+</p>
 {% endblock %}

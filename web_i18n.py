@@ -33,10 +33,45 @@ body {
 .topbar-inner {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 16px 24px;
+    padding: 14px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.nav-left { display: flex; align-items: center; gap: 28px; }
+.nav-links { display: flex; align-items: center; gap: 22px; }
+.nav-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    transition: color 0.15s ease;
+}
+.nav-link:hover { color: var(--text); }
+.nav-right { display: flex; align-items: center; gap: 14px; }
+.lang-select {
+    background: transparent; color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 13px; cursor: pointer;
+}
+.nav-burger {
+    display: none; background: none; border: none; color: var(--text);
+    font-size: 20px; cursor: pointer; padding: 4px 8px;
+}
+@media (max-width: 720px) {
+    .nav-burger { display: block; }
+    .nav-links {
+        display: none; flex-direction: column; align-items: flex-start; gap: 4px;
+        width: 100%; order: 3;
+    }
+    .nav-links-open { display: flex; }
+    .nav-link { padding: 10px 0; width: 100%; }
+    .user-name-desktop-only { display: none; }
+    .nav-left { flex-wrap: wrap; }
+    .hero h1 { font-size: 30px; }
+    .content { padding: 24px 16px; }
+    .feature-grid, .guild-grid { grid-template-columns: 1fr; }
 }
 .brand {
     color: #fff;
@@ -52,8 +87,25 @@ body {
 .user-chip img { width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--accent); }
 .logout-link { color: var(--text-dim); text-decoration: none; margin-left: 10px; transition: color 0.15s; }
 .logout-link:hover { color: var(--accent2); }
-.content { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
-h1 { font-size: 28px; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px; }
+.content {
+    max-width: 1100px; margin: 0 auto; padding: 40px 24px;
+    animation: fadeInUp 0.35s ease both;
+}
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.feature-card, .guild-card, .admin-card, .admin-stat {
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s ease, box-shadow 0.25s ease;
+}
+.feature-card:hover, .guild-card:hover {
+    box-shadow: 0 12px 32px rgba(124,92,255,0.25);
+}
+h1 {
+    font-size: 28px; margin-bottom: 10px; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #fff, #cfd6ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 h2 { font-size: 17px; color: var(--text); font-weight: 700; }
 a { color: var(--accent3); }
 p { color: var(--text-dim); }
@@ -70,7 +122,7 @@ p { color: var(--text-dim); }
     cursor: pointer;
     font-size: 14px;
     box-shadow: 0 4px 18px rgba(88,101,242,0.4);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
 }
 .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 26px rgba(88,101,242,0.55); }
 .btn-small { padding: 8px 18px; font-size: 13px; border-radius: 8px; }
@@ -120,10 +172,11 @@ p { color: var(--text-dim); }
 .feature-card:nth-child(4) { --card-glow: var(--accent4); }
 .feature-card:hover { transform: translateY(-5px); border-color: var(--accent); }
 .feature-card .icon {
-    font-size: 26px; margin-bottom: 14px; width: 48px; height: 48px;
+    font-size: 26px; margin-bottom: 14px; width: 52px; height: 52px;
     display: flex; align-items: center; justify-content: center;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border-radius: 12px;
+    border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(124,92,255,0.35);
 }
 .feature-card h3 { font-size: 16px; margin: 0 0 8px; color: var(--text); font-weight: 700; }
 .feature-card p { font-size: 13px; color: var(--text-dim); margin: 0; line-height: 1.6; }
@@ -168,7 +221,16 @@ p { color: var(--text-dim); }
 }
 .guild-name { font-weight: 700; color: var(--text); }
 
-.back-link { color: var(--text-dim); text-decoration: none; font-size: 14px; }
+.back-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14px;
+    display: inline-block;
+    padding: 8px 0;
+    margin-top: 4px;
+    position: relative;
+    z-index: 1;
+}
 .back-link:hover { color: var(--accent3); }
 
 .settings-form { margin-top: 24px; display: flex; flex-direction: column; gap: 18px; max-width: 460px; }

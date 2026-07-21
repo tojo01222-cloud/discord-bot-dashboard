@@ -1,0 +1,25 @@
+{% extends "admin_base.html" %}
+{% block title %}Feedback — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Feedback & Bugreports</h1>
+
+{% for e in entries %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between;">
+        <strong>{{ e.username }}</strong>
+        <span class="perm-tag {{ 'perm-tag-on' if e.status == 'resolved' else 'perm-tag-off' }}">{{ e.status }}</span>
+    </div>
+    <p style="margin-top:6px;">{{ e.message }}</p>
+    <div style="display:flex; justify-content:space-between; font-size:12px; color:#9297ab;">
+        <span>{{ e.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+        {% if e.status != "resolved" %}
+        <form method="post" action="/admin/feedback/{{ e.id }}/loesen">
+            <button type="submit" class="btn btn-small">Als gelöst markieren</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch kein Feedback eingegangen.</p>
+{% endfor %}
+{% endblock %}

@@ -1,45 +1,30 @@
 {% extends "base.html" %}
-{% block title %}Vorschläge — {{ guild.name }}{% endblock %}
+{% block title %}Statistik — {{ guild.name }}{% endblock %}
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Vorschläge — {{ guild.name }}</h1>
+<h1>Statistik — {{ guild.name }}</h1>
+<p style="font-size:13px;">Nachrichten- und Beitrittsaktivität der letzten 14 Tage.</p>
 
-<form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/kanal" class="settings-form">
-    <div class="field">
-        <label>Vorschlags-Kanal</label>
-        <select name="channel_id">
-            <option value="0">— kein Kanal ausgewählt —</option>
-            {% for ch in channels %}
-            <option value="{{ ch.id }}" {% if channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <button type="submit" class="btn btn-small">Speichern</button>
-</form>
-
-<h2 style="margin-top:32px;">Eingereichte Vorschläge</h2>
-{% for s in suggestions %}
-<div style="padding:14px 0; border-bottom:1px solid #262838;">
-    <div>
-        #{{ s.id }} —
-        {% if s.status == "pending" %}🟡 Offen{% elif s.status == "accepted" %}✅ Angenommen{% else %}❌ Abgelehnt{% endif %}
-        — von Discord-ID {{ s.user_id }}
-    </div>
-    <p style="margin:6px 0;">{{ s.content }}</p>
-    {% if s.status == "pending" %}
-    <div style="display:flex; gap:10px;">
-        <form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/{{ s.id }}/status">
-            <input type="hidden" name="status" value="accepted">
-            <button type="submit" class="btn btn-small btn-green">Annehmen</button>
-        </form>
-        <form method="post" action="/dashboard/{{ guild.id }}/vorschlaege/{{ s.id }}/status">
-            <input type="hidden" name="status" value="rejected">
-            <button type="submit" class="btn btn-small btn-ghost">Ablehnen</button>
-        </form>
-    </div>
-    {% endif %}
-</div>
+{% if not activity %}
+<p style="color:#9297ab;">Noch keine Daten (Zählung startet ab jetzt, alle 5 Minuten aktualisiert).</p>
 {% else %}
-<p style="color:#9297ab;">Noch keine Vorschläge.</p>
-{% endfor %}
+{% set max_messages = activity | map(attribute='message_count') | max %}
+<div class="admin-card">
+    <h2 style="margin-bottom:16px;">💬 Nachrichten pro Tag</h2>
+    <div style="display:flex; align-items:flex-end; gap:6px; height:160px;">
+        {% for a in activity %}
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end;">
+            <div title="{{ a.message_count }}" style="width:100%; background:linear-gradient(180deg, #7c5cff, #eb459e);
+                        border-radius:4px 4px 0 0; height:{{ ((a.message_count / (max_messages or 1)) * 130) | round(0, 'ceil') }}px; min-height:2px;"></div>
+            <span style="font-size:10px; color:#9297ab; writing-mode:vertical-rl;">{{ a.date[5:] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="admin-stat-grid" style="margin-top:24px;">
+    <div class="admin-stat"><div class="value">{{ activity | sum(attribute='message_count') }}</div><div class="label">Nachrichten (14 Tage)</div></div>
+    <div class="admin-stat"><div class="value">{{ activity | sum(attribute='join_count') }}</div><div class="label">Neue Mitglieder (14 Tage)</div></div>
+</div>
+{% endif %}
 {% endblock %}

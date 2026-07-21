@@ -1,36 +1,37 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin-Login</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <main class="content">
-        <div class="login-box">
-            <h1>Admin-Panel</h1>
-            <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
-            {% for message in messages %}
-            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
-            {% endfor %}
-            <form method="post" action="/admin/login" class="settings-form" style="text-align:left; margin-top:20px;">
-                <div class="field">
-                    <label for="username">Benutzername</label>
-                    <input type="text" id="username" name="username" required>
-                </div>
-                <div class="field">
-                    <label for="password">Passwort</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <button type="submit" class="btn">Anmelden</button>
-            </form>
-            {% if operator_invite %}
-            <p class="small-print">
-                <a href="{{ operator_invite }}" target="_blank" style="color:#9297ab;">Unserem Discord beitreten</a>
-            </p>
-            {% endif %}
-        </div>
-    </main>
-</body>
-</html>
+{% extends "admin_base.html" %}
+{% block title %}Server — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Server ({{ guilds|length }})</h1>
+
+<form method="get" action="/admin/servers" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+    <input type="text" name="q" placeholder="Server suchen..." value="{{ q|default('') }}"
+           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
+    <select name="sort" style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;">
+        <option value="name" {% if sort|default('name') == "name" %}selected{% endif %}>Nach Name</option>
+        <option value="members" {% if sort|default('name') == "members" %}selected{% endif %}>Nach Mitgliederzahl</option>
+    </select>
+    <button type="submit" class="btn btn-small">Filtern</button>
+</form>
+
+<div class="admin-card">
+    <table class="admin-table">
+        <tr><th>Name</th><th>Mitglieder</th><th>Server-ID</th><th>Aktionen</th></tr>
+        {% for g in guilds %}
+        <tr>
+            <td>{{ g.name }}</td>
+            <td>{{ g.member_count }}</td>
+            <td>{{ g.guild_id }}</td>
+            <td>
+                <form method="post" action="/admin/servers/{{ g.guild_id }}/invite" style="display:inline;">
+                    <button type="submit" class="btn btn-small">Link erzeugen</button>
+                </form>
+                <form method="post" action="/admin/servers/{{ g.guild_id }}/leave" style="display:inline;"
+                      onsubmit="return confirm('Wirklich verlassen? Der Bot ist danach nicht mehr auf diesem Server.');">
+                    <button type="submit" class="btn btn-small btn-ghost">Verlassen</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

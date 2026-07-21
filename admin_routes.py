@@ -1,24 +1,35 @@
-{% extends "admin_base.html" %}
-{% block title %}Übersicht — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Level-Rollen — {{ guild.name }}{% endblock %}
 {% block content %}
-<h1>Übersicht</h1>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Level-Rollen — {{ guild.name }}</h1>
 
-{% if maintenance_mode %}
-<div class="flash flash-error">Der Bot befindet sich aktuell im Wartungsmodus.</div>
+{% if not rewards %}
+<p style="color:#9297ab;">Noch keine Level-Rollen eingerichtet.</p>
+{% else %}
+{% for r in rewards %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #262838;">
+    <span>Level {{ r.level }} → Rollen-ID {{ r.role_id }}</span>
+    <form method="post" action="/dashboard/{{ guild.id }}/levelrollen/{{ r.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+    </form>
+</div>
+{% endfor %}
 {% endif %}
 
-<div class="admin-stat-grid">
-    <div class="admin-stat">
-        <div class="value">{{ guild_count }}</div>
-        <div class="label">Server mit Bot</div>
+<form method="post" action="/dashboard/{{ guild.id }}/levelrollen" class="settings-form" style="margin-top:24px;">
+    <div class="field">
+        <label for="level">Ab Level</label>
+        <input type="number" id="level" name="level" min="1" required>
     </div>
-    <div class="admin-stat">
-        <div class="value">{{ total_members }}</div>
-        <div class="label">Mitglieder gesamt (aller Server)</div>
+    <div class="field">
+        <label for="role_id">Rolle</label>
+        <select name="role_id" id="role_id">
+            {% for role in roles %}
+            <option value="{{ role.id }}">{{ role.name }}</option>
+            {% endfor %}
+        </select>
     </div>
-    <div class="admin-stat">
-        <div class="value">{{ "Aktiv" if not maintenance_mode else "Wartung" }}</div>
-        <div class="label">Bot-Status</div>
-    </div>
-</div>
+    <button type="submit" class="btn btn-small">Hinzufügen</button>
+</form>
 {% endblock %}

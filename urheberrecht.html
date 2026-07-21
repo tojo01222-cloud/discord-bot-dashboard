@@ -1,24 +1,22 @@
-{% extends "base.html" %}
-{% block title %}Strafverzeichnis — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}API-Statistik — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Strafverzeichnis — {{ guild.name }}</h1>
+<h1>API-Fehlerquote</h1>
+<p style="color:#9297ab; font-size:13px;">Basiert auf einer repräsentativen Stichprobe der häufigsten Discord-API-Aufrufe (nicht vollständig instrumentiert).</p>
 
-{% if not punishments %}
-<p style="color:#9297ab;">Keine aktiven Strafen.</p>
-{% else %}
-<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:0;">
+<div class="admin-card" style="padding:0;">
     <table class="admin-table">
-        <tr><th>Typ</th><th>User</th><th>Grund</th><th>Datum</th></tr>
-        {% for p in punishments %}
+        <tr><th>Datum</th><th>Erfolgreich</th><th>Fehlgeschlagen</th><th>Fehlerquote</th></tr>
+        {% for s in stats %}
         <tr>
-            <td>{{ p.type }}</td>
-            <td>{{ p.user_id }}</td>
-            <td>{{ p.reason }}</td>
-            <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+            <td>{{ s.date }}</td>
+            <td>{{ s.success_count }}</td>
+            <td>{{ s.failure_count }}</td>
+            <td>{{ ((s.failure_count / ((s.success_count + s.failure_count) or 1)) * 100) | round(1) }}%</td>
         </tr>
+        {% else %}
+        <tr><td colspan="4" style="color:#9297ab;">Noch keine Daten.</td></tr>
         {% endfor %}
     </table>
 </div>
-{% endif %}
 {% endblock %}

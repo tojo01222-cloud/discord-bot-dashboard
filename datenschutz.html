@@ -1,32 +1,25 @@
 {% extends "admin_base.html" %}
-{% block title %}Berechtigungsgruppen — Admin-Panel{% endblock %}
+{% block title %}Geplante Wartung — Admin-Panel{% endblock %}
 {% block content %}
-<h1>Berechtigungsgruppen</h1>
+<h1>Geplanter Wartungsmodus</h1>
+<p style="color:#9297ab; font-size:13px;">Wird automatisch zur eingestellten Zeit aktiviert und wieder deaktiviert.</p>
 
 <div class="admin-card">
-    <h2 style="font-size:16px; margin-bottom:12px;">Neue Gruppe anlegen</h2>
-    <form method="post" action="/admin/groups" class="admin-form">
-        <div>
-            <label for="name">Name</label>
-            <input type="text" id="name" name="name" required placeholder="z.B. Support-Team">
-        </div>
-        <button type="submit" class="btn btn-small">Anlegen</button>
+    <form method="post" action="/admin/geplante-wartung" class="admin-form">
+        <div><label for="start">Start</label><input type="datetime-local" id="start" name="start" required></div>
+        <div><label for="end">Ende</label><input type="datetime-local" id="end" name="end" required></div>
+        <div><label for="reason">Grund (wird Usern angezeigt)</label><input type="text" id="reason" name="reason"></div>
+        <button type="submit" class="btn btn-small">Einplanen</button>
     </form>
 </div>
 
-{% if not groups_with_perms %}
-<p style="color:#9297ab;">Noch keine Gruppen angelegt.</p>
-{% else %}
-{% for entry in groups_with_perms %}
+{% for e in entries %}
 <div class="admin-card">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <strong>{{ entry.group.name }}</strong>
-            <span style="color:#9297ab; font-size:12px;"> — {{ entry.member_count }} Mitglied(er), {{ entry.permissions|length }} Recht(e)</span>
-        </div>
-        <a href="/admin/groups/{{ entry.group.id }}" class="btn btn-small btn-ghost">Verwalten</a>
-    </div>
+    <strong>{{ e.start_time.strftime('%d.%m.%Y %H:%M') }} — {{ e.end_time.strftime('%d.%m.%Y %H:%M') }} UTC</strong>
+    {% if e.reason %}<p style="margin-top:4px;">{{ e.reason }}</p>{% endif %}
+    <span class="perm-tag {{ 'perm-tag-on' if e.applied else 'perm-tag-off' }}">{{ "Aktiv" if e.applied else "Geplant" }}</span>
 </div>
+{% else %}
+<p style="color:#9297ab;">Keine geplanten Wartungsfenster.</p>
 {% endfor %}
-{% endif %}
 {% endblock %}

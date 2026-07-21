@@ -1,24 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Tickets — {{ guild.name }}{% endblock %}
+{% block title %}Bewerbung{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Tickets — {{ guild.name }}</h1>
+<div class="login-box" style="max-width:560px;">
+    <h1>{{ config.welcome_text }}</h1>
 
-{% if not tickets %}
-<p style="color:#9297ab;">Noch keine Tickets vorhanden.</p>
-{% else %}
-<div class="admin-card" style="background:#14151f; border:1px solid #262838; border-radius:10px; padding:0;">
-    <table class="admin-table">
-        <tr><th>Status</th><th>Ersteller</th><th>Design</th><th>Erstellt am</th></tr>
-        {% for t in tickets %}
-        <tr>
-            <td>{{ t.status }}</td>
-            <td>{{ t.creator_id }}</td>
-            <td>{{ t.design }}</td>
-            <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-        </tr>
+    {% if closed %}
+    <p style="color:#9297ab;">Dieser Server nimmt aktuell keine Bewerbungen an.</p>
+    {% elif already_applied %}
+    <div class="flash flash-success">Du hast bereits eine offene Bewerbung eingereicht — wir melden uns bei dir!</div>
+    {% else %}
+        {% for message in messages %}
+        <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
         {% endfor %}
-    </table>
+
+        {% if not questions %}
+        <p style="color:#9297ab;">Für diesen Server sind noch keine Bewerbungsfragen eingerichtet.</p>
+        {% else %}
+        <form method="post" action="/bewerbung/{{ guild_id }}" class="settings-form" style="text-align:left;">
+            {% for q in questions %}
+            <div class="field">
+                <label for="question_{{ q.id }}">{{ q.question_text }}</label>
+                <textarea id="question_{{ q.id }}" name="question_{{ q.id }}" required rows="3"
+                          style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn">Bewerbung abschicken</button>
+        </form>
+        {% endif %}
+    {% endif %}
 </div>
-{% endif %}
 {% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Umfragen — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Umfragen — {{ guild.name }}</h1>
+
+<form method="post" action="/dashboard/{{ guild.id }}/umfragen" class="settings-form">
+    <div class="field">
+        <label>Kanal</label>
+        <select name="channel_id">
+            {% for ch in channels %}
+            <option value="{{ ch.id }}">#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field"><label>Frage</label><input type="text" name="question" required></div>
+    <div class="field"><label>Optionen (durch Komma getrennt, 2-10)</label><input type="text" name="options" placeholder="Option A, Option B, Option C" required></div>
+    <button type="submit" class="btn btn-small btn-pink">Umfrage senden</button>
+</form>
+
+<h2 style="margin-top:32px;">Bisherige Umfragen</h2>
+{% for entry in polls %}
+<div class="admin-card">
+    <strong>{{ entry.poll.question }}</strong>
+    {% if entry.poll.closed %}<span style="color:#9297ab;"> (geschlossen)</span>{% endif %}
+    <div style="margin-top:10px;">
+        {% for opt in entry.options %}
+        <div style="font-size:13px; color:#9297ab;">{{ opt }} — {{ entry.counts.get(loop.index0, 0) }} Stimmen</div>
+        {% endfor %}
+    </div>
+    <div style="font-size:12px; color:#9297ab; margin-top:6px;">{{ entry.total }} Stimmen insgesamt</div>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Umfragen.</p>
+{% endfor %}
+{% endblock %}

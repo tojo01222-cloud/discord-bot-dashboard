@@ -1,0 +1,20 @@
+{% extends "admin_base.html" %}
+{% block title %}Gesundheitscheck — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Server-Gesundheitscheck</h1>
+<p style="color:#9297ab; font-size:13px;">Prüft, ob der Bot auf jedem Server noch erreichbar ist (API-Zugriff funktioniert).</p>
+
+<div class="admin-card" style="padding:0;">
+    <table class="admin-table">
+        <tr><th>Server</th><th>Status</th></tr>
+        {% for r in results %}
+        <tr>
+            <td>{{ r.guild.name }}</td>
+            <td>{{ "🟢 Erreichbar" if r.reachable else "🔴 Nicht erreichbar" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" style="color:#9297ab;">Keine Server gefunden.</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

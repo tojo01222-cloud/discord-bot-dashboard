@@ -1,37 +1,29 @@
 {% extends "admin_base.html" %}
-{% block title %}Server — Admin-Panel{% endblock %}
+{% block title %}Changelog — Admin-Panel{% endblock %}
 {% block content %}
-<h1>Server ({{ guilds|length }})</h1>
-
-<form method="get" action="/admin/servers" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
-    <input type="text" name="q" placeholder="Server suchen..." value="{{ q|default('') }}"
-           style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;flex:1;min-width:200px;">
-    <select name="sort" style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:10px;">
-        <option value="name" {% if sort|default('name') == "name" %}selected{% endif %}>Nach Name</option>
-        <option value="members" {% if sort|default('name') == "members" %}selected{% endif %}>Nach Mitgliederzahl</option>
-    </select>
-    <button type="submit" class="btn btn-small">Filtern</button>
-</form>
+<h1>Changelog verwalten</h1>
+<p style="color:#9297ab; font-size:13px;">Öffentlich einsehbar unter <code>/changelog</code>.</p>
 
 <div class="admin-card">
-    <table class="admin-table">
-        <tr><th>Name</th><th>Mitglieder</th><th>Server-ID</th><th>Aktionen</th></tr>
-        {% for g in guilds %}
-        <tr>
-            <td>{{ g.name }}</td>
-            <td>{{ g.member_count }}</td>
-            <td>{{ g.guild_id }}</td>
-            <td>
-                <form method="post" action="/admin/servers/{{ g.guild_id }}/invite" style="display:inline;">
-                    <button type="submit" class="btn btn-small">Link erzeugen</button>
-                </form>
-                <form method="post" action="/admin/servers/{{ g.guild_id }}/leave" style="display:inline;"
-                      onsubmit="return confirm('Wirklich verlassen? Der Bot ist danach nicht mehr auf diesem Server.');">
-                    <button type="submit" class="btn btn-small btn-ghost">Verlassen</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
+    <form method="post" action="/admin/changelog" class="admin-form">
+        <div><label for="version">Version</label><input type="text" id="version" name="version" required placeholder="z.B. 1.4.0"></div>
+        <div><label for="description">Beschreibung</label><textarea id="description" name="description" required></textarea></div>
+        <button type="submit" class="btn btn-small">Hinzufügen</button>
+    </form>
 </div>
+
+{% for e in entries %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between;">
+        <strong>{{ e.version }}</strong>
+        <span style="color:#9297ab; font-size:12px;">{{ e.created_at.strftime('%d.%m.%Y') }}</span>
+    </div>
+    <p style="margin-top:6px;">{{ e.description }}</p>
+    <form method="post" action="/admin/changelog/{{ e.id }}/loeschen">
+        <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
+    </form>
+</div>
+{% else %}
+<p style="color:#9297ab;">Noch keine Einträge.</p>
+{% endfor %}
 {% endblock %}

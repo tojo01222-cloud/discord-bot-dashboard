@@ -1,23 +1,29 @@
-{% extends "admin_base.html" %}
-{% block title %}Ankündigungs-Historie — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Impressum{% endblock %}
 {% block content %}
-<h1>Ankündigungs-Historie</h1>
-<a href="/admin/broadcast" class="btn btn-small" style="margin-bottom:20px; display:inline-block;">+ Neue Ankündigung</a>
+<a href="/" class="back-link">Zurück</a>
+<h1>Impressum</h1>
 
-{% if not announcements %}
-<p style="color:#9297ab;">Noch keine Ankündigungen gesendet.</p>
-{% else %}
-<div class="admin-card">
-    <table class="admin-table">
-        <tr><th>Nachricht</th><th>Server erreicht</th><th>Gesendet am</th></tr>
-        {% for a in announcements %}
-        <tr>
-            <td>{{ a.message[:80] }}{% if a.message|length > 80 %}...{% endif %}</td>
-            <td>{{ a.guild_count }}</td>
-            <td>{{ a.sent_at.strftime('%d.%m.%Y %H:%M') }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
-{% endif %}
+<p style="color:#9297ab; font-size:13px;">
+    Kein Rechtsberatungs-Ersatz. Angaben orientiert an §5 ECG / §25 Mediengesetz (Österreich).
+    Vor öffentlichem Betrieb bei Bedarf rechtlich prüfen lassen.
+</p>
+
+<h2>Diensteanbieter</h2>
+<p>{% if operator_username %}{{ operator_username }}{% else %}<em>[noch nicht hinterlegt]</em>{% endif %}</p>
+
+<h2>Kontakt</h2>
+<p>
+    {% if operator_invite %}
+    <a href="{{ operator_invite }}" target="_blank" style="color:#f5f6fa; text-decoration:underline;">{{ operator_invite }}</a>
+    {% else %}
+    <em>[noch nicht hinterlegt]</em>
+    {% endif %}
+</p>
+
+<h2>Haftungsausschluss</h2>
+<p style="font-size:14px; color:#9297ab;">
+    Für Inhalte externer, verlinkter Seiten wird keine Haftung übernommen — verantwortlich sind
+    ausschließlich deren Betreiber.
+</p>
 {% endblock %}

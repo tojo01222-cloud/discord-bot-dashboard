@@ -1,50 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Bot Dashboard{% endblock %}
+{% block title %}Feedback{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'landing_title') }}</h1>
-    <p>{{ wt(site_lang, 'landing_subtitle') }}</p>
-    <div style="display:flex; gap:14px; justify-content:center; flex-wrap:wrap;">
-        <a href="/login" class="btn btn-discord">🎮 {{ wt(site_lang, 'landing_btn_dashboard') }}</a>
-        <a href="/admin/login" class="btn btn-ghost">🛡️ {{ wt(site_lang, 'landing_btn_admin') }}</a>
-    </div>
-</div>
+<a href="/servers" class="back-link">← Zurück</a>
+<h1>Feedback & Bugreports</h1>
+<p>Hast du einen Fehler gefunden oder einen Verbesserungsvorschlag? Schreib es uns.</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">🛡️</div>
-        <h3>{{ wt(site_lang, 'feature1_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature1_desc') }}</p>
+<form method="post" action="/feedback" class="settings-form">
+    <div class="field">
+        <label for="message">Deine Nachricht</label>
+        <textarea id="message" name="message" required rows="5"
+                  style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:11px 14px;border-radius:10px;font-family:inherit;"></textarea>
     </div>
-    <div class="feature-card">
-        <div class="icon">🎵</div>
-        <h3>{{ wt(site_lang, 'feature2_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature2_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🎫</div>
-        <h3>{{ wt(site_lang, 'feature3_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature3_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📝</div>
-        <h3>{{ wt(site_lang, 'feature4_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature4_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">📈</div>
-        <h3>{{ wt(site_lang, 'feature5_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature5_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">🌐</div>
-        <h3>{{ wt(site_lang, 'feature6_title') }}</h3>
-        <p>{{ wt(site_lang, 'feature6_desc') }}</p>
-    </div>
-</div>
-
-<p class="small-print" style="text-align:center; margin-top:48px;">
-    <a href="/impressum">Impressum</a> ·
-    <a href="/datenschutz">Datenschutz</a>
-</p>
+    <button type="submit" class="btn">Absenden</button>
+</form>
 {% endblock %}

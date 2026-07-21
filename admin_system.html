@@ -1,18 +1,33 @@
-{% extends "base.html" %}
-{% block title %}Reaction-Roles — {{ guild.name }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Bot-Steuerung — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Reaction-Roles — {{ guild.name }}</h1>
-<p style="font-size:13px;">Neue Reaction-Roles werden über <code>/reactionrole add</code> in Discord eingerichtet (dafür wird die Ziel-Nachricht gebraucht) — hier kannst du bestehende einsehen und entfernen.</p>
+<h1>Bot-Steuerung</h1>
 
-{% for e in entries %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span>{{ e.emoji }} → Rollen-ID {{ e.role_id }} (Nachricht {{ e.message_id }})</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/reactionroles/{{ e.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
+<div class="admin-card">
+    <p><strong>Aktueller Status:</strong> {{ "Wartungsmodus aktiv" if state.maintenance_mode else "Normal aktiv" }}</p>
+    {% if state.maintenance_mode and state.maintenance_reason %}
+    <p style="color:#9297ab;">Grund: {{ state.maintenance_reason }}</p>
+    {% endif %}
 </div>
-{% else %}
-<p style="color:#9297ab;">Noch keine Reaction-Roles eingerichtet.</p>
-{% endfor %}
+
+<p style="color:#9297ab; font-size:13px; max-width:500px;">
+    Hinweis: Ein echtes Ein-/Ausschalten des Bot-Prozesses ist ohne Zugriff auf die
+    Hoster-Infrastruktur nicht möglich. Der Wartungsmodus lässt den Bot online, aber er
+    reagiert auf keine Befehle mehr (außer dem Bot-Owner). Änderungen brauchen bis zu
+    20 Sekunden, bis der Bot sie übernimmt.
+</p>
+
+<form method="post" action="/admin/bot-control" class="admin-form">
+    <div>
+        <label>
+            <input type="checkbox" name="enable" value="on" {% if state.maintenance_mode %}checked{% endif %}>
+            Wartungsmodus aktivieren
+        </label>
+    </div>
+    <div>
+        <label for="reason">Grund (wird Usern angezeigt)</label>
+        <input type="text" id="reason" name="reason" value="{{ state.maintenance_reason }}" placeholder="z.B. Wartungsarbeiten">
+    </div>
+    <button type="submit" class="btn">Speichern</button>
+</form>
 {% endblock %}

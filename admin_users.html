@@ -1,29 +1,31 @@
-{% extends "base.html" %}
-{% block title %}Bewerbung von {{ application.applicant_username }}{% endblock %}
+{% extends "admin_base.html" %}
+{% block title %}Sperrliste — Admin-Panel{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}/bewerbungen" class="back-link">← Zurück zur Liste</a>
-<h1>Bewerbung von {{ application.applicant_username }}</h1>
-<p style="color:#9297ab; font-size:13px;">Eingereicht am {{ application.submitted_at.strftime('%d.%m.%Y %H:%M') }} — Status: {{ application.status }}</p>
+<h1>Globale Sperrliste</h1>
+<p style="color:#9297ab; font-size:13px;">User auf dieser Liste können den Bot auf KEINEM Server mehr nutzen.</p>
 
-<div style="display:flex; flex-direction:column; gap:20px; margin-top:24px;">
-    {% for ans in answers %}
-    <div style="background:#14151f; border:1px solid #262838; border-radius:14px; padding:20px;">
-        <div style="color:#9297ab; font-size:13px; margin-bottom:8px;">{{ ans.question_text }}</div>
-        <div>{{ ans.answer_text }}</div>
+{% for e in entries %}
+<div class="admin-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <strong>Discord-ID {{ e.user_id }}</strong>
+            {% if e.reason %}<div style="color:#9297ab; font-size:13px; margin-top:4px;">{{ e.reason }}</div>{% endif %}
+        </div>
+        <form method="post" action="/admin/sperrliste/{{ e.user_id }}/entfernen">
+            <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
+        </form>
     </div>
-    {% endfor %}
 </div>
+{% else %}
+<p style="color:#9297ab;">Die Sperrliste ist leer.</p>
+{% endfor %}
 
-{% if application.status == "pending" %}
-<div style="display:flex; gap:12px; margin-top:28px;">
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="accepted">
-        <button type="submit" class="btn">Annehmen</button>
-    </form>
-    <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ application.id }}/status">
-        <input type="hidden" name="status" value="rejected">
-        <button type="submit" class="btn btn-ghost">Ablehnen</button>
+<div class="admin-card">
+    <h2 style="margin-bottom:12px;">User sperren</h2>
+    <form method="post" action="/admin/sperrliste" class="admin-form">
+        <div><label for="user_id">Discord-User-ID</label><input type="text" id="user_id" name="user_id" required></div>
+        <div><label for="reason">Grund</label><input type="text" id="reason" name="reason"></div>
+        <button type="submit" class="btn btn-small">Sperren</button>
     </form>
 </div>
-{% endif %}
 {% endblock %}

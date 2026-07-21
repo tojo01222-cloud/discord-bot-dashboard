@@ -1,36 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Bewerbungen — {{ guild.name }}{% endblock %}
+{% block title %}Changelog{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">Zurück zu den Einstellungen</a>
-<h1>Bewerbungen — {{ guild.name }}</h1>
+<a href="/" class="back-link">← Back</a>
+<h1>Changelog</h1>
 
-<form method="get" action="/dashboard/{{ guild.id }}/bewerbungen" style="margin-bottom:20px;">
-    <select name="status" onchange="this.form.submit()"
-            style="background:#14151f;border:1px solid #262838;color:#f5f6fa;padding:10px 14px;border-radius:8px;">
-        <option value="" {% if not status %}selected{% endif %}>Alle</option>
-        <option value="pending" {% if status == "pending" %}selected{% endif %}>Offen</option>
-        <option value="accepted" {% if status == "accepted" %}selected{% endif %}>Angenommen</option>
-        <option value="rejected" {% if status == "rejected" %}selected{% endif %}>Abgelehnt</option>
-    </select>
-</form>
-
-{% if not applications %}
-<p style="color:#9297ab;">Keine Bewerbungen gefunden.</p>
-{% else %}
-<div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
-    {% for a in applications %}
-    <div style="display:flex; justify-content:space-between; align-items:center;
-                background:#14151f; border:1px solid #262838; border-radius:10px; padding:18px 22px;">
-        <a href="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}" style="text-decoration:none; color:inherit;">
-            <div style="font-weight:700; color:#f5f6fa;">{{ a.applicant_username }}</div>
-            <div style="color:#9297ab; font-size:12px;">{{ a.submitted_at.strftime('%d.%m.%Y %H:%M') }} — {{ a.status }}</div>
-        </a>
-        <form method="post" action="/dashboard/{{ guild.id }}/bewerbungen/{{ a.id }}/loeschen"
-              onsubmit="return confirm('Diese Bewerbung wirklich löschen?');">
-            <button type="submit" class="btn btn-small btn-ghost">Löschen</button>
-        </form>
-    </div>
-    {% endfor %}
+{% for e in entries %}
+<div class="feature-card" style="margin-bottom:16px;">
+    <h3>{{ e.version }}</h3>
+    <p style="color:#9297ab; font-size:12px; margin-bottom:8px;">{{ e.created_at.strftime('%d.%m.%Y') }}</p>
+    <p style="color:#f5f6fa;">{{ e.description }}</p>
 </div>
-{% endif %}
+{% else %}
+<p style="color:#9297ab;">Noch keine Einträge.</p>
+{% endfor %}
 {% endblock %}

@@ -1,14 +1,54 @@
 {% extends "base.html" %}
-{% block title %}Login — Bot Dashboard{% endblock %}
+{% block title %}Moderation — {{ guild.name }}{% endblock %}
 {% block content %}
-<div class="login-box">
-    <h1>Willkommen </h1>
-    <p>Melde dich mit deinem Discord-Account an, um deine Server zu verwalten.</p>
-    <a href="/login" class="btn btn-discord">Mit Discord anmelden</a>
-    <p class="small-print">
-        Beim Login werden dein Discord-Name, dein Avatar und deine Server-Mitgliedschaften
-        gespeichert, damit wir dir die richtigen Server anzeigen können. Details siehe
-        <a href="/datenschutz" style="color:#9297ab;">Datenschutzerklärung</a>.
-    </p>
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Moderation — {{ guild.name }}</h1>
+<p style="font-size:13px;">
+    Kick/Bann/Autorole-Aktionen laufen direkt über die Discord-API, ohne die
+    Rollen-Hierarchie-Prüfung der entsprechenden Discord-Befehle. Der Zugriff hier ist über
+    deine "Server verwalten"-Berechtigung für genau diesen Server abgesichert.
+</p>
+
+<div class="settings-form">
+    <div>
+        <h2>Kick</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/kick" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Kicken</button>
+        </form>
+    </div>
+    <div>
+        <h2>Bann</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/ban" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Bannen</button>
+        </form>
+    </div>
+    <div>
+        <h2>Verwarnung</h2>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/warn" class="settings-form">
+            <div class="field"><label>User-ID</label><input type="text" name="user_id" required></div>
+            <div class="field"><label>Grund</label><input type="text" name="reason"></div>
+            <button type="submit" class="btn btn-small">Verwarnen</button>
+        </form>
+    </div>
+
+    <div>
+        <h2>🤖 Autorole an alle vergeben</h2>
+        <p style="font-size:12px;">Vergibt eine Rolle rückwirkend an ALLE aktuellen (menschlichen) Mitglieder.</p>
+        <form method="post" action="/dashboard/{{ guild.id }}/moderation/autorole-all" class="settings-form">
+            <div class="field">
+                <label>Rolle</label>
+                <select name="role_id">
+                    {% for role in roles %}
+                    <option value="{{ role.id }}">{{ role.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-small btn-pink">An alle vergeben</button>
+        </form>
+    </div>
 </div>
 {% endblock %}
