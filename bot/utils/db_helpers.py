@@ -1860,3 +1860,44 @@ async def remove_shop_item(item_id: int) -> bool:
         await session.delete(item)
         await session.commit()
         return True
+
+# ---------- Willkommen/Abschied ----------
+
+async def get_welcome_config(guild_id: int) -> WelcomeConfig:
+    async with get_session() as session:
+        cfg = await session.get(WelcomeConfig, guild_id)
+        if cfg is None:
+            cfg = WelcomeConfig(guild_id=guild_id)
+            session.add(cfg)
+            await session.commit()
+            await session.refresh(cfg)
+        return cfg
+
+
+async def set_welcome_settings(
+    guild_id: int, *,
+    welcome_enabled: bool | None = None, welcome_channel_id: int | None = None,
+    welcome_message: str | None = None,
+    goodbye_enabled: bool | None = None, goodbye_channel_id: int | None = None,
+    goodbye_message: str | None = None,
+) -> WelcomeConfig:
+    async with get_session() as session:
+        cfg = await session.get(WelcomeConfig, guild_id)
+        if cfg is None:
+            cfg = WelcomeConfig(guild_id=guild_id)
+            session.add(cfg)
+        if welcome_enabled is not None:
+            cfg.welcome_enabled = welcome_enabled
+        if welcome_channel_id is not None:
+            cfg.welcome_channel_id = welcome_channel_id
+        if welcome_message is not None:
+            cfg.welcome_message = welcome_message
+        if goodbye_enabled is not None:
+            cfg.goodbye_enabled = goodbye_enabled
+        if goodbye_channel_id is not None:
+            cfg.goodbye_channel_id = goodbye_channel_id
+        if goodbye_message is not None:
+            cfg.goodbye_message = goodbye_message
+        await session.commit()
+        await session.refresh(cfg)
+        return cfg
