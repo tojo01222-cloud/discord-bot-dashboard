@@ -32,11 +32,17 @@ from bot.utils.db_helpers import (
     add_anti_exemption,
     remove_anti_exemption,
     get_anti_exemptions,
+    get_ticket_categories,
+    create_ticket_category,
+    delete_ticket_category,
+    count_open_tickets_by_category,
+    get_welcome_config,
+    set_welcome_settings,
 )
-from bot.database.db import get_session
 from dashboard.backend.bot_api import (
     fetch_guild_roles, fetch_guild_text_channels, kick_member, ban_member, send_channel_message,
     fetch_guild_members, add_role_to_member, set_channel_slowmode, set_channel_lock, set_member_nickname,
+    fetch_guild_categories, send_ticket_panel,
 )
 from dashboard.backend.template_context import global_template_context
 
