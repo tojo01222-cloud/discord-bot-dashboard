@@ -203,3 +203,44 @@ p { color: var(--text-dim); }
 .badge-setup { background: rgba(88,101,242,0.15); color: #a8b1ff; }
 .badge-community { background: rgba(34,211,168,0.15); color: #5df0cf; }
 .badge-music { background: rgba(245,166,35,0.15); color: #ffc766; }
+
+/* ---------- Neue Navigation ---------- */
+.topbar-inner { gap: 20px; }
+.page-title { font-weight: 800; font-size: 18px; color: var(--text); letter-spacing: -0.3px; }
+.topbar-right { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.logout-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(235,69,158,0.12); color: #ff8dc6;
+    border: 1px solid rgba(235,69,158,0.3); padding: 8px 14px;
+    border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 700;
+    transition: background 0.15s ease;
+}
+.logout-btn:hover { background: rgba(235,69,158,0.22); }
+
+/* ---------- Server-Startseite ---------- */
+.server-home-header { display: flex; align-items: center; gap: 16px; margin-bottom: 36px; }
+.server-home-header img, .server-home-header .guild-icon-placeholder { width: 56px; height: 56px; border-radius: 16px; }
+.tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+.tile {
+    background: linear-gradient(160deg, var(--bg-card), #191a28);
+    border: 1px solid var(--border); border-radius: 18px; padding: 28px;
+    text-decoration: none; color: var(--text); display: block;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.tile:hover { transform: translateY(-4px); border-color: var(--accent); }
+.tile .icon { font-size: 28px; margin-bottom: 12px; }
+.tile h3 { margin: 0 0 6px; font-size: 16px; font-weight: 700; }
+.tile p { margin: 0; font-size: 13px; color: var(--text-dim); }
+
+/* ---------- Statistik-Kacheln ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-top: 24px; }
+.stat-box { background: linear-gradient(160deg, var(--bg-card), #191a28); border: 1px solid var(--border); border-radius: 16px; padding: 22px; text-align: center; }
+.stat-box .value { font-size: 30px; font-weight: 800; background: linear-gradient(90deg, #fff, #b6c0ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stat-box .label { font-size: 12px; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ---------- Rechtliche Seiten ---------- */
+.legal-page { max-width: 720px; }
+.legal-page h2 { margin-top: 32px; font-size: 18px; }
+.legal-page p, .legal-page li { font-size: 14px; color: var(--text-dim); line-height: 1.7; }
+.legal-page .missing { color: #ffc766; font-style: italic; }
+.legal-note { font-size: 12px; color: var(--text-dim); background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 28px; }
