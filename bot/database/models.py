@@ -601,3 +601,28 @@ class ShopItem(Base):
     name: Mapped[str] = mapped_column(String(100))
     price: Mapped[int] = mapped_column(Integer)
     role_id: Mapped[int] = mapped_column(BigInteger, default=0)
+
+# ---------- Willkommen/Abschied-System ----------
+
+class WelcomeConfig(Base):
+    """Konfiguration für Willkommens- und Abschiedsnachrichten (pro Server genau
+    1 Zeile) -- eigene Tabelle statt neuer Spalten an GuildSettings, siehe
+    Hinweis bei Ticket (create_all() legt nur fehlende TABELLEN an, keine
+    neuen Spalten an bereits existierenden Tabellen)."""
+    __tablename__ = "welcome_configs"
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    welcome_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    welcome_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    # Platzhalter im Text: {user} (Erwähnung), {name} (Anzeigename ohne Erwähnung),
+    # {server} (Servername), {membercount} (aktuelle Mitgliederzahl).
+    welcome_message: Mapped[str] = mapped_column(
+        Text, default="Willkommen {user} auf **{server}**! Wir sind jetzt {membercount} Mitglieder."
+    )
+
+    goodbye_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    goodbye_channel_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    goodbye_message: Mapped[str] = mapped_column(
+        Text, default="**{name}** hat den Server verlassen. Wir sind jetzt noch {membercount} Mitglieder."
+    )
