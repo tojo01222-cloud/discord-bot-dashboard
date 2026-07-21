@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Willkommen/Abschied — {{ guild.name }}{% endblock %}
+{% block content %}
+<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
+<h1>Willkommen/Abschied — {{ guild.name }}</h1>
+<p style="font-size:13px;">Platzhalter im Text: <code>{user}</code> (Erwähnung), <code>{name}</code> (Name), <code>{server}</code> (Servername), <code>{membercount}</code> (Mitgliederzahl).</p>
+
+<form method="post" action="/dashboard/{{ guild.id }}/willkommen" class="settings-form">
+    <span class="section-badge badge-setup">👋 Willkommen</span>
+    <div class="field">
+        <label><input type="checkbox" name="welcome_enabled" value="on" {% if config.welcome_enabled %}checked{% endif %}> Aktiv</label>
+    </div>
+    <div class="field">
+        <label for="welcome_channel_id">Kanal</label>
+        <select name="welcome_channel_id" id="welcome_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if config.welcome_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="welcome_message">Nachricht</label>
+        <input type="text" id="welcome_message" name="welcome_message" value="{{ config.welcome_message }}">
+    </div>
+
+    <span class="section-badge badge-setup">👋 Abschied</span>
+    <div class="field">
+        <label><input type="checkbox" name="goodbye_enabled" value="on" {% if config.goodbye_enabled %}checked{% endif %}> Aktiv</label>
+    </div>
+    <div class="field">
+        <label for="goodbye_channel_id">Kanal</label>
+        <select name="goodbye_channel_id" id="goodbye_channel_id">
+            <option value="0">— kein Kanal ausgewählt —</option>
+            {% for ch in channels %}
+            <option value="{{ ch.id }}" {% if config.goodbye_channel_id == ch.id|int %}selected{% endif %}>#{{ ch.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="goodbye_message">Nachricht</label>
+        <input type="text" id="goodbye_message" name="goodbye_message" value="{{ config.goodbye_message }}">
+    </div>
+
+    <button type="submit" class="btn">💾 Speichern</button>
+</form>
+{% endblock %}
