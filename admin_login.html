@@ -1,14 +1,36 @@
-{% extends "base.html" %}
-{% block title %}Login — Bot Dashboard{% endblock %}
-{% block content %}
-<div class="login-box">
-    <h1>Willkommen </h1>
-    <p>Melde dich mit deinem Discord-Account an, um deine Server zu verwalten.</p>
-    <a href="/login" class="btn btn-discord">Mit Discord anmelden</a>
-    <p class="small-print">
-        Beim Login werden dein Discord-Name, dein Avatar und deine Server-Mitgliedschaften
-        gespeichert, damit wir dir die richtigen Server anzeigen können. Details siehe
-        <a href="/datenschutz" style="color:#9297ab;">Datenschutzerklärung</a>.
-    </p>
-</div>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="content">
+        <div class="login-box">
+            <h1>Admin-Panel</h1>
+            <p>Getrennter Login, unabhängig vom normalen Discord-Login.</p>
+            {% for message in messages %}
+            <div class="flash flash-{{ message.type }}">{{ message.text }}</div>
+            {% endfor %}
+            <form method="post" action="/admin/login" class="settings-form" style="text-align:left; margin-top:20px;">
+                <div class="field">
+                    <label for="username">Benutzername</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="field">
+                    <label for="password">Passwort</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn">Anmelden</button>
+            </form>
+            {% if operator_invite %}
+            <p class="small-print">
+                <a href="{{ operator_invite }}" target="_blank" style="color:#9297ab;">Unserem Discord beitreten</a>
+            </p>
+            {% endif %}
+        </div>
+    </main>
+</body>
+</html>
