@@ -3,6 +3,7 @@ Dashboard-Backend (Phase 4 — Basis).
 Laeuft als eigener Prozess, getrennt vom Bot (siehe README).
 """
 import logging
+import asyncio
 import secrets
 
 import httpx
@@ -16,6 +17,7 @@ from dashboard.backend.config import dashboard_config as cfg
 from dashboard.backend import discord_oauth
 from dashboard.backend.bot_api import (
     fetch_guild_text_channels, fetch_guild_voice_channels, fetch_guild_categories, fetch_guild_roles,
+    fetch_guild_channels_categorized,
 )
 from dashboard.backend.admin_routes import admin_router
 from dashboard.backend.application_routes import application_router
@@ -27,6 +29,7 @@ from bot.utils.db_helpers import (
     save_guild_settings_from_dashboard,
     get_or_create_guild_settings,
     get_news_posts,
+    log_dashboard_action,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -72,13 +75,6 @@ async def index(request: Request):
     return templates.TemplateResponse(request, "landing.html", {"user": None, "messages": []})
 
 
-@app.get("/set-site-language")
-async def set_site_language(request: Request, lang: str = "en", next: str = "/"):
-    if lang not in ("en", "de"):
-        lang = "en"
-    request.session["site_lang"] = lang
-    return RedirectResponse(next)
-
 
 @app.get("/news", response_class=HTMLResponse)
 async def news_page(request: Request):
@@ -91,6 +87,57 @@ async def news_page(request: Request):
 @app.get("/apply", response_class=HTMLResponse)
 async def apply_page(request: Request):
     return templates.TemplateResponse(request, "apply.html", {
+        "user": _current_user(request), "messages": [],
+    })
+
+
+@app.get("/changelog", response_class=HTMLResponse)
+async def changelog_page(request: Request):
+    from bot.utils.db_helpers import get_changelog_entries
+    entries = await get_changelog_entries()
+    return templates.TemplateResponse(request, "changelog.html", {
+        "user": _current_user(request), "messages": [], "entries": entries,
+    })
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def feedback_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    return templates.TemplateResponse(request, "feedback.html", {"user": user, "messages": []})
+
+
+@app.post("/feedback")
+async def feedback_submit(request: Request, message: str = Form(...)):
+    from bot.utils.db_helpers import create_feedback
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    await create_feedback(int(user["discord_id"]), user["username"], message)
+    return templates.TemplateResponse(request, "feedback.html", {
+        "user": user, "messages": [{"type": "success", "text": "Danke für dein Feedback!"}],
+    })
+
+
+@app.get("/set-site-language")
+async def set_site_language(request: Request, lang: str = "en", next: str = "/"):
+    if lang not in ("en", "de"):
+        lang = "en"
+    request.session["site_lang"] = lang
+    return RedirectResponse(next)
+
+
+@app.get("/urheberrecht", response_class=HTMLResponse)
+async def urheberrecht_page(request: Request):
+    return templates.TemplateResponse(request, "urheberrecht.html", {
+        "user": _current_user(request), "messages": [],
+    })
+
+
+@app.get("/impressum", response_class=HTMLResponse)
+async def impressum_page(request: Request):
+    return templates.TemplateResponse(request, "impressum.html", {
         "user": _current_user(request), "messages": [],
     })
 
@@ -131,7 +178,8 @@ async def auth_callback(request: Request, code: str = "", state: str = ""):
         "avatar_hash": discord_user.get("avatar") or "",
         "dashboard_id": dashboard_user.id,
     }
-    request.session["access_token"] = access_token
+
+request.session["access_token"] = access_token
 
     # Falls der Login vom Bewerbungsformular ausgelöst wurde, dorthin zurückleiten
     # statt immer zur Server-Übersicht.
@@ -215,6 +263,32 @@ async def _require_guild_access(request: Request, guild_id: int):
     return None, match
 
 
+@app.get("/dashboard/{guild_id}/uebersicht", response_class=HTMLResponse)
+async def guild_overview_page(request: Request, guild_id: int):
+    """Server-Startseite: erscheint direkt nach der Serverauswahl, bevor man in
+    die eigentlichen Einstellungen geht. Schnellzugriff auf die wichtigsten
+    Bereiche plus ein kurzer Statistik-Überblick."""
+    denied, guild = await _require_guild_access(request, guild_id)
+    if denied:
+        return denied
+
+    from bot.utils.db_helpers import get_daily_activity, count_open_tickets, get_guild_punishments
+    activity = await get_daily_activity(guild_id, days=7)
+    messages_7d = sum(a.message_count for a in activity)
+    try:
+        open_tickets = await count_open_tickets(guild_id)
+    except Exception:
+        open_tickets = 0
+    punishments = await get_guild_punishments(guild_id)
+
+    return templates.TemplateResponse(request, "guild_overview.html", {
+        "user": _current_user(request), "messages": [],
+        "guild": {"id": guild_id, "name": guild["name"], "icon": guild.get("icon")},
+        "messages_7d": messages_7d, "open_tickets": open_tickets,
+        "punishment_count": len(punishments),
+    })
+
+
 @app.get("/dashboard/{guild_id}", response_class=HTMLResponse)
 async def guild_settings_page(request: Request, guild_id: int):
     denied, guild = await _require_guild_access(request, guild_id)
@@ -225,10 +299,16 @@ async def guild_settings_page(request: Request, guild_id: int):
     async with get_session() as session:
         settings = await get_or_create_guild_settings(session, guild_id)
 
-    text_channels = await fetch_guild_text_channels(guild_id)
-    voice_channels = await fetch_guild_voice_channels(guild_id)
-    categories = await fetch_guild_categories(guild_id)
-    roles = await fetch_guild_roles(guild_id)
+    # Performance: Kanäle (1 API-Aufruf statt bisher 3 identische) und Rollen
+    # GLEICHZEITIG abfragen statt nacheinander -- spart bei Discords typischer
+    # Antwortzeit spürbar Ladezeit auf der meistbesuchten Dashboard-Seite.
+    channels_data, roles = await asyncio.gather(
+        fetch_guild_channels_categorized(guild_id),
+        fetch_guild_roles(guild_id),
+    )
+    text_channels = channels_data["text"]
+    voice_channels = channels_data["voice"]
+    categories = channels_data["categories"]
 
     return templates.TemplateResponse(request, "settings.html", {
         "user": user, "messages": [],
@@ -272,4 +352,8 @@ async def save_guild_settings(
         autorole_bot_id, autorole_admin_id,
         anti_hack_enabled == "on", anti_werbung_enabled == "on",
     )
+    if language in ("en", "de"):
+        request.session["site_lang"] = language
+    user = _current_user(request)
+    await log_dashboard_action(guild_id, int(user["discord_id"]), user["username"], "Server-Einstellungen geändert")
     return RedirectResponse(f"/dashboard/{guild_id}?saved=1", status_code=303)
