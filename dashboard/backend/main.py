@@ -47,9 +47,6 @@ app.include_router(server_extra_router)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Loggt den VOLLEN Traceback (landet in den Render-Logs) UND zeigt eine
-    # freundliche Seite statt der nackten "Internal Server Error" -- so
-    # bleibt die Ursache immer im Log nachvollziehbar, egal was passiert.
     log.exception("Unbehandelter Fehler bei %s %s", request.method, request.url.path)
     return PlainTextResponse(
         "Es ist ein unerwarteter Fehler aufgetreten. Das wurde geloggt — "
@@ -73,7 +70,6 @@ async def index(request: Request):
     if _current_user(request):
         return RedirectResponse("/servers")
     return templates.TemplateResponse(request, "landing.html", {"user": None, "messages": []})
-
 
 
 @app.get("/news", response_class=HTMLResponse)
@@ -174,12 +170,11 @@ async def auth_callback(request: Request, code: str = "", state: str = ""):
 
     request.session["user"] = {
         "discord_id": discord_user["id"],
-        "username": discord_user["username"],
+    "username": discord_user["username"],
         "avatar_hash": discord_user.get("avatar") or "",
         "dashboard_id": dashboard_user.id,
     }
-
-request.session["access_token"] = access_token
+    request.session["access_token"] = access_token
 
     # Falls der Login vom Bewerbungsformular ausgelöst wurde, dorthin zurückleiten
     # statt immer zur Server-Übersicht.
@@ -222,9 +217,6 @@ async def servers(request: Request):
             "bot_present": int(g["id"]) in bot_guild_ids,
         })
 
-    # Server, auf denen der Bot schon aktiv ist, ganz oben anzeigen -- die
-    # will man normalerweise zuerst sehen/verwalten, nicht erst die, wo man
-    # den Bot noch einladen müsste.
     manageable.sort(key=lambda g: not g["bot_present"])
 
     invite_url = (
@@ -240,9 +232,7 @@ async def servers(request: Request):
 
 async def _require_guild_access(request: Request, guild_id: int):
     """Prüft Zugriff und gibt bei Erfolg (None, guild_dict) zurück, bei Ablehnung
-    (redirect_response, None). So muss der Aufrufer NICHT selbst nochmal bei
-    Discord nachfragen (der /users/@me/guilds-Endpunkt ist scharf rate-limitiert
-    -- ein doppelter Aufruf pro Seitenaufruf war ein echtes Risiko)."""
+    (redirect_response, None)."""
     user = _current_user(request)
     if not user:
         return RedirectResponse("/"), None
@@ -265,9 +255,7 @@ async def _require_guild_access(request: Request, guild_id: int):
 
 @app.get("/dashboard/{guild_id}/uebersicht", response_class=HTMLResponse)
 async def guild_overview_page(request: Request, guild_id: int):
-    """Server-Startseite: erscheint direkt nach der Serverauswahl, bevor man in
-    die eigentlichen Einstellungen geht. Schnellzugriff auf die wichtigsten
-    Bereiche plus ein kurzer Statistik-Überblick."""
+    """Server-Startseite: erscheint direkt nach der Serverauswahl."""
     denied, guild = await _require_guild_access(request, guild_id)
     if denied:
         return denied
@@ -299,9 +287,6 @@ async def guild_settings_page(request: Request, guild_id: int):
     async with get_session() as session:
         settings = await get_or_create_guild_settings(session, guild_id)
 
-    # Performance: Kanäle (1 API-Aufruf statt bisher 3 identische) und Rollen
-    # GLEICHZEITIG abfragen statt nacheinander -- spart bei Discords typischer
-    # Antwortzeit spürbar Ladezeit auf der meistbesuchten Dashboard-Seite.
     channels_data, roles = await asyncio.gather(
         fetch_guild_channels_categorized(guild_id),
         fetch_guild_roles(guild_id),
