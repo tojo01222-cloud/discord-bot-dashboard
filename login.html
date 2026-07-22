@@ -1,21 +1,29 @@
-{% extends "admin_base.html" %}
-{% block title %}Aktivste Server — Admin-Panel{% endblock %}
+{% extends "base.html" %}
+{% block title %}Apply for our Team{% endblock %}
 {% block content %}
-<h1>Aktivste Server</h1>
-<p style="color:#9297ab; font-size:13px;">Nach Nachrichtenaktivität der letzten 14 Tage.</p>
+<div class="hero">
+    <h1>{{ wt(site_lang, 'apply_title') }}</h1>
+    <p>{{ wt(site_lang, 'apply_subtitle') }}</p>
+    {% if operator_invite %}
+    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 {{ wt(site_lang, 'apply_btn') }}</a>
+    {% endif %}
+</div>
 
-<div class="admin-card" style="padding:0;">
-    <table class="admin-table">
-        <tr><th>#</th><th>Server</th><th>Nachrichten (14 Tage)</th></tr>
-        {% for r in ranking %}
-        <tr>
-            <td>{{ loop.index }}</td>
-            <td>{{ r.guild.name }}</td>
-            <td>{{ r.messages }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="3" style="color:#9297ab;">Noch keine Daten.</td></tr>
-        {% endfor %}
-    </table>
+<div class="feature-grid">
+    <div class="feature-card">
+        <div class="icon">1️⃣</div>
+        <h3>{{ wt(site_lang, 'apply_step1_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step1_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">2️⃣</div>
+        <h3>{{ wt(site_lang, 'apply_step2_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step2_desc') }}</p>
+    </div>
+    <div class="feature-card">
+        <div class="icon">3️⃣</div>
+        <h3>{{ wt(site_lang, 'apply_step3_title') }}</h3>
+        <p>{{ wt(site_lang, 'apply_step3_desc') }}</p>
+    </div>
 </div>
 {% endblock %}

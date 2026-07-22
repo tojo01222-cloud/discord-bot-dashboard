@@ -9,31 +9,33 @@
 <body>
     <header class="topbar">
         <div class="topbar-inner">
-            <div class="nav-left">
-                {% if user %}
-                <div class="user-chip">
-                    {% if user.avatar_hash %}
-                    <img src="https://cdn.discordapp.com/avatars/{{ user.discord_id }}/{{ user.avatar_hash }}.png" alt="">
-                    {% endif %}
-                </div>
-                {% endif %}
-                <a href="/" class="brand">Bot Dashboard</a>
-                <nav class="nav-links" id="navLinks">
-                    <a href="/servers" class="nav-link">Dashboard</a>
-                    <a href="/apply" class="nav-link">{{ wt(site_lang, 'nav_apply') }}</a>
-                    <a href="/news" class="nav-link">{{ wt(site_lang, 'nav_news') }}</a>
-                    {% if user %}
-                    <a href="/admin/login" class="nav-link">{{ wt(site_lang, 'nav_admin_panel') }}</a>
-                    <a href="/logout" class="nav-link">{{ wt(site_lang, 'nav_logout') }}</a>
-                    {% endif %}
-                </nav>
+            <div class="page-name">
+                <a href="/" class="brand-dot">●</a>
+                <span>{% block page_heading %}{{ self.title() }}{% endblock %}</span>
             </div>
             <div class="nav-right">
                 <select onchange="window.location.href=this.value" title="{{ wt(site_lang, 'lang_switch_label') }}" class="lang-select">
                     <option value="/set-site-language?lang=en&next={{ request.url.path }}" {% if site_lang == 'en' %}selected{% endif %}>EN</option>
                     <option value="/set-site-language?lang=de&next={{ request.url.path }}" {% if site_lang == 'de' %}selected{% endif %}>DE</option>
                 </select>
-                <button class="nav-burger" id="navBurger" aria-label="Menu">☰</button>
+                {% if user %}
+                <div class="user-chip">
+                    {% if user.avatar_hash %}
+                    <img src="https://cdn.discordapp.com/avatars/{{ user.discord_id }}/{{ user.avatar_hash }}.png" alt="">
+                    {% endif %}
+                    <span class="user-name-desktop-only">{{ user.username }}</span>
+                </div>
+                <a href="/logout" class="btn-logout" title="{{ wt(site_lang, 'nav_logout') }}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    <span>{{ wt(site_lang, 'nav_logout') }}</span>
+                </a>
+                {% else %}
+                <a href="/login" class="btn btn-small btn-discord">{{ wt(site_lang, 'login_btn') }}</a>
+                {% endif %}
             </div>
         </div>
     </header>
@@ -43,21 +45,16 @@
         {% endfor %}
         {% block content %}{% endblock %}
     </main>
-    <footer style="text-align:center; padding:24px; font-size:12px; color:#9297ab;">
+    <footer class="site-footer">
         {% if operator_invite %}
-        <a href="{{ operator_invite }}" target="_blank" class="btn btn-small btn-ghost" style="margin-bottom:12px; display:inline-block;">{{ wt(site_lang, 'footer_join_discord') }}</a>
-        <br>
+        <a href="{{ operator_invite }}" target="_blank" class="btn btn-small btn-ghost">{{ wt(site_lang, 'footer_join_discord') }}</a>
         {% endif %}
-        <a href="/impressum" style="color:#9297ab;">Impressum</a> ·
-        <a href="/datenschutz" style="color:#9297ab;">Datenschutz</a> ·
-        <a href="/urheberrecht" style="color:#9297ab;">Urheberrecht</a>
-        <br>
-        <span style="color:#a29bc4;">© {{ current_year }} {% if operator_username %}{{ operator_username }}{% else %}Bot Dashboard{% endif %}. Alle Rechte vorbehalten.</span>
+        <div class="footer-links">
+            <a href="/impressum">Impressum</a>
+            <a href="/datenschutz">Datenschutzerklärung</a>
+            <a href="/urheberrecht">Urheberrecht</a>
+        </div>
+        <span class="footer-copyright">© {{ current_year }} ToJo1222. Alle Rechte vorbehalten.</span>
     </footer>
-    <script>
-        document.getElementById('navBurger').addEventListener('click', function () {
-            document.getElementById('navLinks').classList.toggle('nav-links-open');
-        });
-    </script>
 </body>
 </html>

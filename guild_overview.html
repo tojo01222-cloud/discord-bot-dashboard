@@ -1,0 +1,21 @@
+{% extends "admin_base.html" %}
+{% block title %}Aktivste Server — Admin-Panel{% endblock %}
+{% block content %}
+<h1>Aktivste Server</h1>
+<p style="color:#9297ab; font-size:13px;">Nach Nachrichtenaktivität der letzten 14 Tage.</p>
+
+<div class="admin-card" style="padding:0;">
+    <table class="admin-table">
+        <tr><th>#</th><th>Server</th><th>Nachrichten (14 Tage)</th></tr>
+        {% for r in ranking %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ r.guild.name }}</td>
+            <td>{{ r.messages }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" style="color:#9297ab;">Noch keine Daten.</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

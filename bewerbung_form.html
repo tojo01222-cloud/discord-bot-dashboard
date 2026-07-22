@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Einstellungen — {{ guild.name }}{% endblock %}
 {% block content %}
-<a href="/servers" class="back-link">← Zurück zur Serverliste</a>
+<a href="/dashboard/{{ guild.id }}/uebersicht" class="back-link">← Zurück zur Server-Übersicht</a>
 <h1>Einstellungen — {{ guild.name }}</h1>
 
 <form method="post" action="/dashboard/{{ guild.id }}/settings" class="settings-form">

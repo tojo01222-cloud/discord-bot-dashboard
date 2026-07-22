@@ -3,7 +3,11 @@
 {% block content %}
 <a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
 <h1>Willkommen & Abschied — {{ guild.name }}</h1>
-<p style="font-size:13px;">Platzhalter: <code>{user}</code>, <code>{server}</code>. Leerer Text = deaktiviert.</p>
+<p style="font-size:13px;">
+    Platzhalter: <code>{user}</code>, <code>{server}</code>, <code>{membercount}</code>.
+    Sobald ein Kanal ausgewählt ist, wird immer gesendet — bleibt der Text leer, wird automatisch
+    ein Standardtext mit Mitgliederzahl verwendet. Um wirklich nichts zu senden, "— kein Kanal —" wählen.
+</p>
 
 <form method="post" action="/dashboard/{{ guild.id }}/willkommen" class="settings-form">
     <h2>👋 Willkommen</h2>
@@ -17,8 +21,8 @@
         </select>
     </div>
     <div class="field">
-        <label>Nachricht</label>
-        <input type="text" name="welcome_message" value="{{ cfg.welcome_message }}" placeholder="z.B. Willkommen {user} auf {server}!">
+        <label>Nachricht (leer = Standardtext mit Mitgliederzahl)</label>
+        <input type="text" name="welcome_message" value="{{ cfg.welcome_message }}" placeholder="z.B. Willkommen {user} auf {server}! Wir sind jetzt {membercount} Mitglieder.">
     </div>
 
     <h2 style="margin-top:24px;">👋 Abschied</h2>
@@ -32,8 +36,8 @@
         </select>
     </div>
     <div class="field">
-        <label>Nachricht</label>
-        <input type="text" name="leave_message" value="{{ cfg.leave_message }}" placeholder="z.B. {user} hat den Server verlassen.">
+        <label>Nachricht (leer = Standardtext mit Mitgliederzahl)</label>
+        <input type="text" name="leave_message" value="{{ cfg.leave_message }}" placeholder="z.B. {user} hat den Server verlassen. Wir sind jetzt {membercount} Mitglieder.">
     </div>
 
     <button type="submit" class="btn">Speichern</button>

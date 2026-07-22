@@ -1,50 +1,49 @@
 {% extends "base.html" %}
-{% block title %}Team — {{ guild.name }}{% endblock %}
+{% block title %}{{ guild.name }} — Übersicht{% endblock %}
 {% block content %}
-<a href="/dashboard/{{ guild.id }}" class="back-link">← Zurück zu den Einstellungen</a>
-<h1>Team — {{ guild.name }}</h1>
-
-<h2 style="margin-top:24px;">Ränge (niedrig → hoch)</h2>
-{% if not ranks %}
-<p style="color:#9297ab;">Noch keine Team-Ränge eingerichtet.</p>
-{% else %}
-{% for r in ranks %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #262838;">
-    <span>Position {{ r.position }} — Rollen-ID {{ r.role_id }}</span>
-    <form method="post" action="/dashboard/{{ guild.id }}/team/raenge/{{ r.id }}/loeschen">
-        <button type="submit" class="btn btn-small btn-ghost">Entfernen</button>
-    </form>
-</div>
-{% endfor %}
-{% endif %}
-
-<form method="post" action="/dashboard/{{ guild.id }}/team/raenge" class="settings-form" style="margin-top:20px;">
-    <div class="field">
-        <label for="role_id">Neuer Rang (wird am Ende der Hierarchie eingefügt)</label>
-        <select name="role_id" id="role_id">
-            {% for role in roles %}
-            <option value="{{ role.id }}">{{ role.name }}</option>
-            {% endfor %}
-        </select>
+<div class="overview-header">
+    {% if guild.icon %}
+    <img src="https://cdn.discordapp.com/icons/{{ guild.id }}/{{ guild.icon }}.png" alt="" class="overview-icon">
+    {% else %}
+    <div class="overview-icon overview-icon-placeholder">{{ guild.name[0] }}</div>
+    {% endif %}
+    <div>
+        <h1 style="margin-bottom:4px;">{{ guild.name }}</h1>
+        <p style="margin:0;">Server-Übersicht</p>
     </div>
-    <button type="submit" class="btn btn-small">Rang hinzufügen</button>
-</form>
-
-<h2 style="margin-top:40px;">Mitglieder ({{ members|length }})</h2>
-{% if not members %}
-<p style="color:#9297ab;">Das Team ist aktuell leer.</p>
-{% else %}
-<div class="admin-card">
-    {% for m in members %}
-    <div style="padding:8px 0; border-bottom:1px solid #262838;">
-        Discord-ID {{ m.user_id }} —
-        {% if m.current_rank_id and m.current_rank_id in ranks_by_id %}
-        Rang-Position {{ ranks_by_id[m.current_rank_id].position }}
-        {% else %}
-        kein Rang zugewiesen
-        {% endif %}
-    </div>
-    {% endfor %}
 </div>
-{% endif %}
+
+<div class="admin-stat-grid" style="margin:28px 0;">
+    <div class="admin-stat"><div class="value">{{ messages_7d }}</div><div class="label">Nachrichten (7 Tage)</div></div>
+    <div class="admin-stat"><div class="value">{{ open_tickets }}</div><div class="label">Offene Tickets</div></div>
+    <div class="admin-stat"><div class="value">{{ punishment_count }}</div><div class="label">Aktive Strafen</div></div>
+</div>
+
+<div class="overview-grid">
+    <a href="/dashboard/{{ guild.id }}" class="overview-card">
+        <div class="icon">⚙️</div>
+        <h3>Dashboard</h3>
+        <p>Alle Einstellungen für diesen Server verwalten.</p>
+    </a>
+    <a href="/news" class="overview-card">
+        <div class="icon">📰</div>
+        <h3>News</h3>
+        <p>Aktuelle Ankündigungen und Updates.</p>
+    </a>
+    <a href="/dashboard/{{ guild.id }}/bewerbungen" class="overview-card">
+        <div class="icon">📝</div>
+        <h3>Bewerbungen</h3>
+        <p>Eingegangene Team-Bewerbungen ansehen.</p>
+    </a>
+    <a href="/admin/login" class="overview-card">
+        <div class="icon">🛡️</div>
+        <h3>Admin-Dashboard</h3>
+        <p>Serverübergreifende Verwaltung (separater Login).</p>
+    </a>
+    <a href="/dashboard/{{ guild.id }}/statistik" class="overview-card">
+        <div class="icon">📊</div>
+        <h3>Statistik</h3>
+        <p>Aktivität und Wachstum dieses Servers im Überblick.</p>
+    </a>
+</div>
 {% endblock %}

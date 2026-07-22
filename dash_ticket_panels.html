@@ -1,29 +1,86 @@
 {% extends "base.html" %}
-{% block title %}Apply for our Team{% endblock %}
+{% block title %}Datenschutzerklärung{% endblock %}
 {% block content %}
-<div class="hero">
-    <h1>{{ wt(site_lang, 'apply_title') }}</h1>
-    <p>{{ wt(site_lang, 'apply_subtitle') }}</p>
-    {% if operator_invite %}
-    <a href="{{ operator_invite }}" target="_blank" class="btn btn-discord">💬 {{ wt(site_lang, 'apply_btn') }}</a>
-    {% endif %}
-</div>
+<a href="/" class="back-link">← Zurück</a>
+<div class="legal-page">
+<h1>Datenschutzerklärung</h1>
+<p class="legal-notice">
+    Kein Ersatz für individuelle Rechtsberatung. Diese Erklärung orientiert sich an der
+    Datenschutz-Grundverordnung (DSGVO) und dem österreichischen Datenschutzgesetz (DSG).
+</p>
 
-<div class="feature-grid">
-    <div class="feature-card">
-        <div class="icon">1️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step1_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step1_desc') }}</p>
+<section class="legal-section">
+    <h2>1. Verantwortlicher</h2>
+    <p>Verantwortlicher im Sinne des Art. 4 Nr. 7 DSGVO ist der Betreiber dieser Website und des
+    dazugehörigen Discord-Bots: ToJo1222,
+    erreichbar über {% if operator_invite %}Support &amp; Fragen über unseren <a href="{{ operator_invite }}" target="_blank">Discord-Server</a>{% else %}<em>noch zu ergänzen</em>{% endif %}.</p>
+</section>
+
+<section class="legal-section">
+    <h2>2. Welche Daten werden verarbeitet?</h2>
+    <div class="legal-table-wrap">
+    <table class="legal-table">
+        <tr><th>Login (Discord-OAuth2)</th><td>Discord-User-ID, Benutzername, Avatar-Bild, Liste der Server, auf denen du Admin-Rechte hast</td></tr>
+        <tr><th>Server-Einstellungen</th><td>Von dir über das Dashboard vorgenommene Konfigurationen (z. B. Kanal-Zuordnungen, aktivierte Module)</td></tr>
+        <tr><th>Moderations-/Support-Daten</th><td>Verwarnungen, Ticket-Verläufe, Team-Rang-Historie auf Servern, wo der Bot aktiv ist</td></tr>
+        <tr><th>Technische Daten</th><td>IP-Adresse und Zeitpunkt bei Admin-Panel-Logins (Sicherheitsprotokoll)</td></tr>
+    </table>
     </div>
-    <div class="feature-card">
-        <div class="icon">2️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step2_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step2_desc') }}</p>
-    </div>
-    <div class="feature-card">
-        <div class="icon">3️⃣</div>
-        <h3>{{ wt(site_lang, 'apply_step3_title') }}</h3>
-        <p>{{ wt(site_lang, 'apply_step3_desc') }}</p>
-    </div>
+</section>
+
+<section class="legal-section">
+    <h2>3. Rechtsgrundlage der Verarbeitung</h2>
+    <p>Die Verarbeitung erfolgt zur Erfüllung eines Vertrags bzw. vorvertraglicher Maßnahmen
+    (Art. 6 Abs. 1 lit. b DSGVO) — konkret: um dir nach dem Login die richtigen Server anzuzeigen und
+    deine Einstellungen zu speichern — sowie auf Grundlage berechtigter Interessen (Art. 6 Abs. 1
+    lit. f DSGVO) zur Absicherung des Admin-Panels gegen unbefugten Zugriff.</p>
+</section>
+
+<section class="legal-section">
+    <h2>4. Zweck der Verarbeitung</h2>
+    <p>Die Login-Daten werden ausschließlich benötigt, um dir nach dem Login die richtigen Server
+    anzuzeigen und deine Einstellungen zu speichern. Die Moderations- und Support-Daten dienen
+    ausschließlich dazu, dass Team-Mitglieder auf dem jeweiligen Server einen Überblick behalten
+    (z. B. frühere Verwarnungen, laufende/abgeschlossene Support-Tickets). Sie werden nicht an Dritte
+    weitergegeben, nicht verkauft und nicht zu Werbezwecken genutzt.</p>
+</section>
+
+<section class="legal-section">
+    <h2>5. Speicherdauer</h2>
+    <p>Deine Daten werden gespeichert, bis du die Löschung deines Kontos beantragst (Kontakt siehe
+    oben) oder die Daten aus anderem Grund (z. B. Ablauf gesetzlicher Aufbewahrungsfristen) gelöscht
+    werden.</p>
+</section>
+
+<section class="legal-section">
+    <h2>6. Empfänger und Drittlandübermittlung</h2>
+    <p>Eine Weitergabe an Dritte erfolgt ausschließlich im Rahmen des Login-Vorgangs an Discord
+    Inc./Discord Netherlands B.V. (OAuth2-Authentifizierung), soweit für den Betrieb dieser
+    Funktion technisch erforderlich. Details zur Datenverarbeitung durch Discord findest du in der
+    <a href="https://discord.com/privacy" target="_blank">Datenschutzrichtlinie von Discord</a>.</p>
+</section>
+
+<section class="legal-section">
+    <h2>7. Deine Rechte</h2>
+    <p>Nach der DSGVO stehen dir folgende Rechte zu:</p>
+    <ul class="legal-list">
+        <li><strong>Auskunft</strong> (Art. 15 DSGVO) über die zu deiner Person gespeicherten Daten</li>
+        <li><strong>Berichtigung</strong> (Art. 16 DSGVO) unrichtiger Daten</li>
+        <li><strong>Löschung</strong> (Art. 17 DSGVO) deiner Daten, soweit keine gesetzliche
+            Aufbewahrungspflicht entgegensteht</li>
+        <li><strong>Einschränkung der Verarbeitung</strong> (Art. 18 DSGVO)</li>
+        <li><strong>Datenübertragbarkeit</strong> (Art. 20 DSGVO)</li>
+        <li><strong>Widerspruch</strong> (Art. 21 DSGVO) gegen die Verarbeitung</li>
+        <li><strong>Beschwerde bei einer Aufsichtsbehörde</strong> (Art. 77 DSGVO) — in Österreich
+            zuständig ist die <a href="https://www.dsb.gv.at" target="_blank">Österreichische
+            Datenschutzbehörde</a></li>
+    </ul>
+</section>
+
+<section class="legal-section">
+    <h2>8. Kontakt bei Fragen zum Datenschutz</h2>
+    <p>Bei Fragen zu dieser Datenschutzerklärung oder zur Ausübung deiner Rechte wende dich über den
+    unter Punkt 1 genannten Kontaktweg an uns, oder siehe <a href="/impressum">Impressum</a>.</p>
+</section>
 </div>
 {% endblock %}
