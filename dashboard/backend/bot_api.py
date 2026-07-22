@@ -17,6 +17,26 @@ VOICE_CHANNEL_TYPE = 2
 CATEGORY_CHANNEL_TYPE = 4
 
 
+async def fetch_guild_channels_categorized(guild_id: int) -> dict:
+    """Holt die Kanalliste EINMAL und sortiert sie lokal in Text/Voice/Kategorien
+    -- spart 2 von 3 komplett identischen API-Aufrufen gegenüber dem separaten
+    Aufruf von fetch_guild_text_channels/fetch_guild_voice_channels/
+    fetch_guild_categories (alle drei fragten bisher dieselbe Adresse ab).
+    Für Seiten, die mehrere Kanal-Typen gleichzeitig brauchen (z.B. die
+    Einstellungsseite), deutlich schneller."""
+    if not DISCORD_TOKEN:
+        return {"text": [], "voice": [], "categories": []}
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/channels", headers=headers)
+        if resp.status_code != 200:
+            return {"text": [], "voice": [], "categories": []}
+        channels = resp.json()
+        return {
+            "text": [c for c in channels if c.get("type") == TEXT_CHANNEL_TYPE],
+            "voice": [c for c in channels if c.get("type") == VOICE_CHANNEL_TYPE],
+            "categories": [c for c in channels if c.get("type") == CATEGORY_CHANNEL_TYPE],
+        }
 async def fetch_guild_text_channels(guild_id: int) -> list[dict]:
     if not DISCORD_TOKEN:
         return []
