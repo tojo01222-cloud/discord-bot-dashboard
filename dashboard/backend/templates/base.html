@@ -14,6 +14,11 @@
                 <span>{% block page_heading %}{{ self.title() }}{% endblock %}</span>
             </div>
             <div class="nav-right">
+                <nav class="topbar-links">
+                    <a href="/apply">✨ {{ wt(site_lang, 'nav_apply') }}</a>
+                    <a href="/news">{{ wt(site_lang, 'nav_news') }}</a>
+                    <a href="/admin/login">🛡️ {{ wt(site_lang, 'nav_admin_panel') }}</a>
+                </nav>
                 <select onchange="window.location.href=this.value" title="{{ wt(site_lang, 'lang_switch_label') }}" class="lang-select">
                     <option value="/set-site-language?lang=en&next={{ request.url.path }}" {% if site_lang == 'en' %}selected{% endif %}>EN</option>
                     <option value="/set-site-language?lang=de&next={{ request.url.path }}" {% if site_lang == 'de' %}selected{% endif %}>DE</option>
@@ -54,6 +59,10 @@
             <a href="/datenschutz">Datenschutzerklärung</a>
             <a href="/urheberrecht">Urheberrecht</a>
         </div>
+        <span class="footer-copyright">© {{ current_year }} ToJo1222. Alle Rechte vorbehalten.</span>
+    </footer>
+</body>
+</html>
         <span class="footer-copyright">© {{ current_year }} ToJo1222. Alle Rechte vorbehalten.</span>
     </footer>
 </body>
