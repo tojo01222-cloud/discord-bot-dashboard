@@ -23,7 +23,7 @@ from bot.database.models import (
     AdConfig, Partner, ReactionRole, SuggestionConfig, Suggestion,
     BirthdayConfig, Birthday, EconomyBalance, ShopItem,
     WelcomeConfig, TimedAutorole, VerificationConfig,
-    Poll, PollVote, StickyMessage, BannedWord, VoiceTime, ServerBackup,
+    Poll, PollVote, StickyMessage, BannedWord, ServerBackup,
     ScheduledEvent, DashboardAuditLog, DailyActivity,
     GlobalBlocklist, AdminLoginHistory,
     ErrorLog, ApiCallStat, GuildTag, GuildAdminNote, ChangelogEntry,
@@ -2069,39 +2069,6 @@ async def remove_banned_word(entry_id: int) -> bool:
         await session.delete(entry)
         await session.commit()
         return True
-
-
-# ---------- Voice-Aktivitäts-Tracking ----------
-
-async def get_voice_time(guild_id: int, user_id: int) -> int:
-    """Gezielte Abfrage für einen einzelnen User -- effizienter als
-    get_voice_leaderboard() mit hohem Limit, wenn nur EIN Wert gebraucht wird."""
-    async with get_session() as session:
-        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id, VoiceTime.user_id == user_id)
-        entry = (await session.execute(stmt)).scalar_one_or_none()
-        return entry.total_seconds if entry else 0
-
-
-async def add_voice_time(guild_id: int, user_id: int, seconds: int) -> None:
-    async with get_session() as session:
-        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id, VoiceTime.user_id == user_id)
-        entry = (await session.execute(stmt)).scalar_one_or_none()
-        if entry is None:
-            entry = VoiceTime(guild_id=guild_id, user_id=user_id, total_seconds=seconds)
-            session.add(entry)
-        else:
-            entry.total_seconds += seconds
-        await session.commit()
-
-
-async def get_voice_leaderboard(guild_id: int, limit: int = 10) -> list[VoiceTime]:
-    async with get_session() as session:
-        stmt = select(VoiceTime).where(VoiceTime.guild_id == guild_id).order_by(
-            VoiceTime.total_seconds.desc()
-        ).limit(limit)
-        result = await session.execute(stmt)
-        return list(result.scalars().all())
-
 
 # ---------- Server-Backup (Snapshot) ----------
 

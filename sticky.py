@@ -6,7 +6,9 @@ Willkommen/Abschied, Zeit-Autorole, Verifizierung.
 - /zeitautorole add/liste/entfernen    -- Rolle nach X Tagen im Server automatisch vergeben
 - /verifizierung on/off/kanal/rolle     -- Beitritts-Verifizierung per Button einrichten
 
-Platzhalter in Willkommens-/Abschiedsnachricht: {user}, {server}.
+Platzhalter in Willkommens-/Abschiedsnachricht: {user}, {server}, {membercount}.
+Bleibt der Text leer, wird automatisch ein Standardtext mit Mitgliederzahl verwendet
+(vorher wurde in diesem Fall fälschlich gar nichts gesendet).
 
 Diese Systeme laufen unabhängig vom normalen Autorole-Cog (bot/cogs/autorole.py) --
 das hier ergänzt, ersetzt nichts.
@@ -94,12 +96,26 @@ class Welcome(commands.Cog):
         lang = await get_guild_language(guild.id)
         cfg = await get_welcome_config(guild.id)
 
-        if cfg.welcome_channel_id and cfg.welcome_message:
+        # Bug behoben: vorher wurde NICHTS gesendet, wenn kein eigener Text
+        # eingetragen war -- jetzt reicht ein ausgewählter Kanal, ein
+        # sinnvoller Standardtext (inkl. Mitgliederzahl) springt sonst ein.
+        if cfg.welcome_channel_id:
             channel = guild.get_channel(cfg.welcome_channel_id)
             if channel:
-                text = cfg.welcome_message.replace("{user}", member.mention).replace("{server}", guild.name)
+                if cfg.welcome_message:
+                    text = (cfg.welcome_message
+                            .replace("{user}", member.mention)
+                            .replace("{server}", guild.name)
+                            .replace("{membercount}", str(guild.member_count)))
+                else:
+                    text = (f"👋 Willkommen auf **{guild.name}**, {member.mention}! "
+                            f"Wir haben jetzt **{guild.member_count}** Mitglieder." if lang == "de" else
+                            f"👋 Welcome to **{guild.name}**, {member.mention}! "
+                            f"We now have **{guild.member_count}** members.")
+                embed = discord.Embed(description=text, color=discord.Color.green())
+                embed.set_thumbnail(url=member.display_avatar.url)
                 try:
-                    await channel.send(text)
+                    await channel.send(embed=embed)
                 except discord.Forbidden:
                     pass
 
@@ -121,13 +137,24 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         guild = member.guild
+        lang = await get_guild_language(guild.id)
         cfg = await get_welcome_config(guild.id)
-        if cfg.leave_channel_id and cfg.leave_message:
+        if cfg.leave_channel_id:
             channel = guild.get_channel(cfg.leave_channel_id)
             if channel:
-                text = cfg.leave_message.replace("{user}", str(member)).replace("{server}", guild.name)
+                if cfg.leave_message:
+                    text = (cfg.leave_message
+                            .replace("{user}", str(member))
+                            .replace("{server}", guild.name)
+                            .replace("{membercount}", str(guild.member_count)))
+                else:
+                    text = (f"👋 **{member}** hat den Server verlassen. Wir sind jetzt **{guild.member_count}** Mitglieder."
+                            if lang == "de" else
+                            f"👋 **{member}** left the server. We're now **{guild.member_count}** members.")
+                embed = discord.Embed(description=text, color=discord.Color.red())
+                embed.set_thumbnail(url=member.display_avatar.url)
                 try:
-                    await channel.send(text)
+                    await channel.send(embed=embed)
                 except discord.Forbidden:
                     pass
 
@@ -181,7 +208,7 @@ class Welcome(commands.Cog):
         await set_welcome_config(ctx.guild.id, welcome_channel_id=kanal.id)
         await ctx.send(embed=success_embed(f"Willkommens-Kanal auf {kanal.mention} gesetzt."))
 
-    @willkommen.command(name="nachricht", description="Legt den Begrüßungstext fest ({user}, {server} als Platzhalter).")
+    @willkommen.command(name="nachricht", description="Legt den Begrüßungstext fest ({user}, {server}, {membercount} als Platzhalter).")
     @app_commands.describe(text="Der Begrüßungstext")
     @require_level(PermissionLevel.SERVER_ADMIN)
     async def willkommen_nachricht(self, ctx: commands.Context, *, text: str):
@@ -201,7 +228,7 @@ class Welcome(commands.Cog):
         await set_welcome_config(ctx.guild.id, leave_channel_id=kanal.id)
         await ctx.send(embed=success_embed(f"Abschieds-Kanal auf {kanal.mention} gesetzt."))
 
-    @abschied.command(name="nachricht", description="Legt den Abschiedstext fest ({user}, {server} als Platzhalter).")
+    @abschied.command(name="nachricht", description="Legt den Abschiedstext fest ({user}, {server}, {membercount} als Platzhalter).")
     @app_commands.describe(text="Der Abschiedstext")
     @require_level(PermissionLevel.SERVER_ADMIN)
     async def abschied_nachricht(self, ctx: commands.Context, *, text: str):

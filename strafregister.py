@@ -1,71 +1,98 @@
 """
-Voice-Aktivitäts-Tracking -- misst, wie lange Mitglieder in Sprachkanälen
-verbringen.
+Wortfilter -- löscht Nachrichten automatisch, die verbotene Wörter enthalten.
 
-- /voicetop      -- Bestenliste nach Sprachkanal-Zeit
-- /voicezeit [member]  -- eigene oder fremde Gesamtzeit
+- /wortfilter add <wort>       -- fügt ein verbotenes Wort hinzu (SERVER_ADMIN)
+- /wortfilter liste             -- zeigt alle verbotenen Wörter
+- /wortfilter entfernen <id>     -- entfernt ein Wort (SERVER_ADMIN)
+
+Wie bei Anti-Spam/Anti-Hack: die Wortliste wird gecacht (TTL), damit nicht
+bei jeder einzelnen Nachricht eine Datenbankabfrage nötig ist.
 """
 import datetime as dt
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.embeds import base_embed, error_embed
-from bot.utils.db_helpers import add_voice_time, get_voice_leaderboard, get_voice_time, get_guild_language
+from bot.utils.permissions import require_level, PermissionLevel
+from bot.utils.embeds import success_embed, error_embed, base_embed
+from bot.utils.db_helpers import get_guild_language, add_banned_word, get_banned_words, remove_banned_word
 
-# (guild_id, user_id) -> Zeitpunkt des Beitritts zu einem Sprachkanal.
-# Rein im Arbeitsspeicher -- bei Bot-Neustart geht die aktuell laufende
-# Session verloren, bereits gespeicherte Gesamtzeit bleibt aber erhalten.
-_voice_join_times: dict[tuple[int, int], dt.datetime] = {}
-
-
-def _format_duration(total_seconds: int) -> str:
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    return f"{hours}h {minutes}m"
+_word_cache: dict[int, tuple] = {}  # guild_id -> (timestamp, set(wörter))
+_CACHE_TTL = 60
 
 
-class VoiceTracking(commands.Cog):
+async def _get_cached_words(guild_id: int) -> set[str]:
+    now = dt.datetime.utcnow().timestamp()
+    cached = _word_cache.get(guild_id)
+    if cached and now - cached[0] < _CACHE_TTL:
+        return cached[1]
+    entries = await get_banned_words(guild_id)
+    words = {e.word for e in entries}
+    _word_cache[guild_id] = (now, words)
+    return words
+
+
+class Wortfilter(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    @commands.hybrid_group(name="wortfilter", description="Wortfilter verwalten.")
+    @commands.guild_only()
+    async def wortfilter(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @wortfilter.command(name="add", description="Fügt ein verbotenes Wort hinzu.")
+    @app_commands.describe(wort="Das zu blockierende Wort")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def wortfilter_add(self, ctx: commands.Context, wort: str):
+        await add_banned_word(ctx.guild.id, wort)
+        _word_cache.pop(ctx.guild.id, None)
+        await ctx.send(embed=success_embed(f"Wort zur Wortfilter-Liste hinzugefügt: {wort}"))
+
+    @wortfilter.command(name="liste", description="Zeigt alle verbotenen Wörter.")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def wortfilter_liste(self, ctx: commands.Context):
+        entries = await get_banned_words(ctx.guild.id)
+        if not entries:
+            await ctx.send(embed=error_embed("Keine Wörter eingerichtet."), ephemeral=True)
+            return
+        lines = [f"#{e.id} — {e.word}" for e in entries]
+        await ctx.send(embed=base_embed("🚫 Wortfilter", "\n".join(lines)), ephemeral=True)
+
+    @wortfilter.command(name="entfernen", description="Entfernt ein Wort aus der Liste.")
+    @app_commands.describe(entry_id="Die ID aus /wortfilter liste")
+    @require_level(PermissionLevel.SERVER_ADMIN)
+    async def wortfilter_entfernen(self, ctx: commands.Context, entry_id: int):
+        ok = await remove_banned_word(entry_id)
+        _word_cache.pop(ctx.guild.id, None)
+        await ctx.send(embed=success_embed("Entfernt.") if ok else error_embed("ID nicht gefunden."))
+
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        if member.bot:
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
             return
-        key = (member.guild.id, member.id)
-
-        if before.channel and not after.channel:
-            joined_at = _voice_join_times.pop(key, None)
-            if joined_at:
-                seconds = int((dt.datetime.utcnow() - joined_at).total_seconds())
-                if seconds > 0:
-                    await add_voice_time(member.guild.id, member.id, seconds)
-
-        if after.channel and not before.channel:
-            _voice_join_times[key] = dt.datetime.utcnow()
-
-    @commands.hybrid_command(name="voicetop", description="Zeigt die Bestenliste nach Sprachkanal-Zeit.")
-    @commands.guild_only()
-    async def voicetop(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        top = await get_voice_leaderboard(ctx.guild.id)
-        if not top:
-            await ctx.send(embed=error_embed("Noch keine Daten." if lang == "de" else "No data yet."))
+        words = await _get_cached_words(message.guild.id)
+        if not words:
             return
-        medals = ["🥇", "🥈", "🥉"]
-        lines = [f"{medals[i] if i < 3 else f'{i+1}.'} <@{e.user_id}> — {_format_duration(e.total_seconds)}"
-                 for i, e in enumerate(top)]
-        await ctx.send(embed=base_embed("🎙️ Voice-Bestenliste" if lang == "de" else "🎙️ Voice leaderboard", "\n".join(lines)))
-
-    @commands.hybrid_command(name="voicezeit", description="Zeigt die Sprachkanal-Gesamtzeit eines Mitglieds.")
-    @commands.guild_only()
-    async def voicezeit(self, ctx: commands.Context, member: discord.Member = None):
-        lang = await get_guild_language(ctx.guild.id)
-        target = member or ctx.author
-        seconds = await get_voice_time(ctx.guild.id, target.id)
-        await ctx.send(embed=base_embed(f"🎙️ {target.display_name}", _format_duration(seconds)))
+        content_lower = message.content.lower()
+        if any(w in content_lower for w in words):
+            try:
+                await message.delete()
+            except discord.Forbidden:
+                return
+            lang = await get_guild_language(message.guild.id)
+            try:
+                await message.channel.send(
+                    f"{message.author.mention} " + (
+                        "deine Nachricht enthielt ein nicht erlaubtes Wort." if lang == "de"
+                        else "your message contained a disallowed word."
+                    ), delete_after=6,
+                )
+            except discord.Forbidden:
+                pass
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(VoiceTracking(bot))
+    await bot.add_cog(Wortfilter(bot))

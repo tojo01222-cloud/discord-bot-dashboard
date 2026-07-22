@@ -1,190 +1,132 @@
 """
-Economy-System.
+Server-Aktivitätsstatistik (fürs Dashboard-Diagramm) + Rollen-Menü
+(Self-Service Rollen per Button, ohne Reaction).
 
-- /balance [user]                      -- zeigt den Kontostand
-- /daily                                -- holt die tägliche Belohnung ab (24h Cooldown)
-- /pay <user> <betrag>                   -- überweist Coins an einen anderen User
-- /leaderboard_economy                    -- Top 10 nach Kontostand
-- /shop liste                              -- zeigt kaufbare Items
-- /shop kaufen <item_id>                    -- kauft ein Item (vergibt ggf. automatisch eine Rolle)
-- /shop add <name> <preis> [rolle]           -- fügt ein Item hinzu (SERVER_ADMIN)
-- /shop remove <item_id>                      -- entfernt ein Item (SERVER_ADMIN)
+Aktivitäts-Zählung ist bewusst NICHT pro Nachricht einzeln in der Datenbank
+gespeichert (wäre wieder der Anti-Spam-Performance-Fehler) -- stattdessen
+wird in einem einfachen Zähler im Arbeitsspeicher gesammelt und alle
+5 Minuten gebündelt in die Datenbank geschrieben.
 
-Bewusst komplett unabhängig vom Level-/XP-System (bot/cogs/level.py) --
-zwei getrennte "Währungen", damit Server sich aussuchen können, welches
-System sie nutzen wollen, ohne dass beide sich gegenseitig beeinflussen.
+- /rollenmenue erstellen <titel> <rollen...>   -- postet ein Rollen-Menü (SERVER_ADMIN)
 """
+import datetime as dt
+
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from bot.utils.permissions import require_level, PermissionLevel
-from bot.utils.embeds import success_embed, error_embed, base_embed
-from bot.utils.db_helpers import (
-    get_guild_language,
-    get_balance,
-    add_balance,
-    claim_daily,
-    get_economy_leaderboard,
-    add_shop_item,
-    get_shop_items,
-    get_shop_item,
-    remove_shop_item,
-)
+from bot.utils.embeds import success_embed, error_embed
+from bot.utils.db_helpers import increment_daily_activity, get_guild_language
 
-DAILY_AMOUNT = 100
+ROLE_MENU_CUSTOM_ID = "rolemenu_select_dynamic"
+
+_message_counts: dict[int, int] = {}
+_join_counts: dict[int, int] = {}
 
 
-class Economy(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+class RoleMenuSelect(discord.ui.Select):
+    def __init__(self, roles: list[discord.Role] | None = None):
+        # Ohne roles (z.B. beim Wiederherstellen nach einem Neustart) wird ein
+        # Platzhalter verwendet -- die eigentliche Nachricht behält ihre echten
+        # Optionen, nur diese Instanz hier dient dem persistenten Dispatcher.
+        options = (
+            [discord.SelectOption(label=r.name, value=str(r.id)) for r in roles[:25]]
+            if roles else [discord.SelectOption(label="—", value="0")]
+        )
+        super().__init__(
+            placeholder="Rolle(n) wählen...", min_values=0, max_values=len(options),
+            options=options, custom_id=ROLE_MENU_CUSTOM_ID,
+        )
 
-    @commands.hybrid_command(name="balance", description="Zeigt deinen Kontostand (oder den eines anderen Users).")
-    @app_commands.describe(member="Optional: ein anderer User")
-    @commands.guild_only()
-    async def balance(self, ctx: commands.Context, member: discord.Member = None):
-        lang = await get_guild_language(ctx.guild.id)
-        target = member or ctx.author
-        entry = await get_balance(ctx.guild.id, target.id)
-        embed = base_embed(f"💰 {target.display_name}", f"**{entry.balance}** Coins" if lang == "de"
-                            else f"**{entry.balance}** coins")
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name="daily", description="Holt deine tägliche Belohnung ab.")
-    @commands.guild_only()
-    async def daily(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        new_balance = await claim_daily(ctx.guild.id, ctx.author.id, DAILY_AMOUNT)
-        if new_balance is None:
-            await ctx.send(embed=error_embed(
-                "Du hast deine tägliche Belohnung schon abgeholt -- versuch's morgen wieder." if lang == "de"
-                else "You've already claimed your daily reward -- try again tomorrow."), ephemeral=True)
-            return
-
-        await ctx.send(embed=success_embed(
-            f"+{DAILY_AMOUNT} Coins! Neuer Kontostand: {new_balance}." if lang == "de"
-            else f"+{DAILY_AMOUNT} coins! New balance: {new_balance}."))
-
-    @commands.hybrid_command(name="pay", description="Überweist Coins an einen anderen User.")
-    @app_commands.describe(member="Empfänger", betrag="Wie viele Coins")
-    @commands.guild_only()
-    async def pay(self, ctx: commands.Context, member: discord.Member, betrag: int):
-        lang = await get_guild_language(ctx.guild.id)
-        if member.id == ctx.author.id:
-            await ctx.send(embed=error_embed(
-                "Du kannst dir nicht selbst Coins schicken." if lang == "de"
-                else "You can't send coins to yourself."), ephemeral=True)
-            return
-        if betrag <= 0:
-            await ctx.send(embed=error_embed(
-                "Der Betrag muss größer als 0 sein." if lang == "de" else "The amount must be greater than 0."),
-                ephemeral=True)
-            return
-
-        sender_entry = await get_balance(ctx.guild.id, ctx.author.id)
-        if sender_entry.balance < betrag:
-            await ctx.send(embed=error_embed(
-                "Du hast nicht genug Coins." if lang == "de" else "You don't have enough coins."), ephemeral=True)
-            return
-
-        await add_balance(ctx.guild.id, ctx.author.id, -betrag)
-        await add_balance(ctx.guild.id, member.id, betrag)
-        await ctx.send(embed=success_embed(
-            f"{betrag} Coins an {member.mention} überwiesen." if lang == "de"
-            else f"Sent {betrag} coins to {member.mention}."))
-
-    @commands.hybrid_command(name="leaderboard_economy", description="Zeigt die Top 10 nach Kontostand.")
-    @commands.guild_only()
-    async def leaderboard_economy(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        top = await get_economy_leaderboard(ctx.guild.id)
-        if not top:
-            await ctx.send(embed=error_embed("Noch keine Daten." if lang == "de" else "No data yet."))
-            return
-
-        embed = base_embed("💰 Economy-Leaderboard" if lang == "de" else "💰 Economy leaderboard")
-        medals = ["🥇", "🥈", "🥉"]
-        lines = [f"{medals[i] if i < 3 else f'{i+1}.'} <@{e.user_id}> — {e.balance} Coins"
-                 for i, e in enumerate(top)]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_group(name="shop", description="Shop verwalten/nutzen.")
-    @commands.guild_only()
-    async def shop(self, ctx: commands.Context):
-        if ctx.invoked_subcommand is None:
-            await ctx.send_help(ctx.command)
-
-    @shop.command(name="liste", description="Zeigt alle kaufbaren Items.")
-    async def shop_liste(self, ctx: commands.Context):
-        lang = await get_guild_language(ctx.guild.id)
-        items = await get_shop_items(ctx.guild.id)
-        if not items:
-            await ctx.send(embed=error_embed("Der Shop ist leer." if lang == "de" else "The shop is empty."))
-            return
-
-        embed = base_embed("🛒 Shop")
-        lines = [f"#{i.id} — **{i.name}** — {i.price} Coins" + (f" (Rolle: <@&{i.role_id}>)" if i.role_id else "")
-                 for i in items[:25]]
-        embed.description = "\n".join(lines)
-        await ctx.send(embed=embed)
-
-    @shop.command(name="kaufen", description="Kauft ein Item aus dem Shop.")
-    @app_commands.describe(item_id="Die ID aus /shop liste")
-    @commands.guild_only()
-    async def shop_kaufen(self, ctx: commands.Context, item_id: int):
-        lang = await get_guild_language(ctx.guild.id)
-        item = await get_shop_item(item_id)
-        if item is None or item.guild_id != ctx.guild.id:
-            await ctx.send(embed=error_embed("Item nicht gefunden." if lang == "de" else "Item not found."),
-                            ephemeral=True)
-            return
-
-        entry = await get_balance(ctx.guild.id, ctx.author.id)
-        if entry.balance < item.price:
-            await ctx.send(embed=error_embed(
-                "Du hast nicht genug Coins für dieses Item." if lang == "de"
-                else "You don't have enough coins for this item."), ephemeral=True)
-            return
-
-        await add_balance(ctx.guild.id, ctx.author.id, -item.price)
-
-        if item.role_id:
-            role = ctx.guild.get_role(item.role_id)
-            if role:
+    async def callback(self, interaction: discord.Interaction):
+        # Bewusst nur HINZUFÜGEN, kein Entfernen: nach einem Bot-Neustart kennt
+        # diese Dispatcher-Instanz nicht mehr alle ursprünglichen Optionen der
+        # jeweiligen Nachricht -- "nur hinzufügen" bleibt dadurch immer korrekt,
+        # "entfernen" könnte sonst versehentlich falsche Rollen betreffen.
+        member = interaction.user
+        guild = interaction.guild
+        added = []
+        for value in self.values:
+            if value == "0":
+                continue
+            role = guild.get_role(int(value))
+            if role and role < guild.me.top_role and role not in member.roles:
                 try:
-                    await ctx.author.add_roles(role, reason=f"Shop-Kauf: {item.name}")
+                    await member.add_roles(role, reason="Rollen-Menü")
+                    added.append(role.name)
                 except discord.Forbidden:
                     pass
 
-        await ctx.send(embed=success_embed(
-            f"**{item.name}** gekauft!" if lang == "de" else f"Bought **{item.name}**!"))
+        text = f"✅ Rollen hinzugefügt: {', '.join(added)}" if added else "ℹ️ Keine neuen Rollen hinzugefügt."
+        await interaction.response.send_message(text, ephemeral=True)
 
-    @shop.command(name="add", description="Fügt ein Item zum Shop hinzu.")
-    @app_commands.describe(name="Name des Items", preis="Preis in Coins", rolle="Optional: Rolle, die beim Kauf vergeben wird")
-    @require_level(PermissionLevel.SERVER_ADMIN)
-    async def shop_add(self, ctx: commands.Context, name: str, preis: int, rolle: discord.Role = None):
-        lang = await get_guild_language(ctx.guild.id)
-        if preis <= 0:
-            await ctx.send(embed=error_embed(
-                "Der Preis muss größer als 0 sein." if lang == "de" else "The price must be greater than 0."))
+
+class RoleMenuView(discord.ui.View):
+    def __init__(self, roles: list[discord.Role] | None = None):
+        super().__init__(timeout=None)
+        self.add_item(RoleMenuSelect(roles))
+
+
+class ActivityRoleMenu(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    async def cog_load(self) -> None:
+        self.bot.add_view(RoleMenuView())  # persistenter Dispatcher, siehe RoleMenuSelect-Docstring
+        self._flush_loop.start()
+
+    def cog_unload(self) -> None:
+        self._flush_loop.cancel()
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
             return
-        item = await add_shop_item(ctx.guild.id, name, preis, rolle.id if rolle else 0)
-        await ctx.send(embed=success_embed(
-            f"Item **{item.name}** für {preis} Coins hinzugefügt." if lang == "de"
-            else f"Item **{item.name}** added for {preis} coins."))
+        _message_counts[message.guild.id] = _message_counts.get(message.guild.id, 0) + 1
 
-    @shop.command(name="remove", description="Entfernt ein Item aus dem Shop.")
-    @app_commands.describe(item_id="Die ID aus /shop liste")
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            return
+        _join_counts[member.guild.id] = _join_counts.get(member.guild.id, 0) + 1
+
+    @tasks.loop(minutes=5)
+    async def _flush_loop(self) -> None:
+        today = dt.datetime.utcnow().strftime("%Y-%m-%d")
+        guild_ids = set(_message_counts.keys()) | set(_join_counts.keys())
+        for guild_id in guild_ids:
+            messages = _message_counts.pop(guild_id, 0)
+            joins = _join_counts.pop(guild_id, 0)
+            if messages or joins:
+                await increment_daily_activity(guild_id, today, messages=messages, joins=joins)
+
+    @_flush_loop.before_loop
+    async def _before_flush(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @commands.hybrid_group(name="rollenmenue", description="Self-Service-Rollenmenü verwalten.")
+    @commands.guild_only()
+    async def rollenmenue(self, ctx: commands.Context):
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @rollenmenue.command(name="erstellen", description="Postet ein Rollen-Menü zum Selbstauswählen (bis zu 5 Rollen).")
+    @app_commands.describe(
+        titel="Titel des Menüs", rolle1="1. Rolle", rolle2="2. Rolle (optional)",
+        rolle3="3. Rolle (optional)", rolle4="4. Rolle (optional)", rolle5="5. Rolle (optional)",
+    )
     @require_level(PermissionLevel.SERVER_ADMIN)
-    async def shop_remove(self, ctx: commands.Context, item_id: int):
+    async def rollenmenue_erstellen(self, ctx: commands.Context, titel: str, rolle1: discord.Role,
+                                     rolle2: discord.Role = None, rolle3: discord.Role = None,
+                                     rolle4: discord.Role = None, rolle5: discord.Role = None):
         lang = await get_guild_language(ctx.guild.id)
-        ok = await remove_shop_item(item_id)
-        if ok:
-            await ctx.send(embed=success_embed("Entfernt." if lang == "de" else "Removed."))
-        else:
-            await ctx.send(embed=error_embed("ID nicht gefunden." if lang == "de" else "ID not found."))
+        roles = [r for r in [rolle1, rolle2, rolle3, rolle4, rolle5] if r is not None]
+
+        embed = success_embed(f"🎭 {titel}", "Wähle deine Rollen im Menü unten aus." if lang == "de"
+                               else "Choose your roles from the menu below.")
+        await ctx.send(embed=embed, view=RoleMenuView(roles))
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Economy(bot))
+    await bot.add_cog(ActivityRoleMenu(bot))
