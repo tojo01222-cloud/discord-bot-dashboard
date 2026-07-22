@@ -37,6 +37,8 @@ async def fetch_guild_channels_categorized(guild_id: int) -> dict:
             "voice": [c for c in channels if c.get("type") == VOICE_CHANNEL_TYPE],
             "categories": [c for c in channels if c.get("type") == CATEGORY_CHANNEL_TYPE],
         }
+
+
 async def fetch_guild_text_channels(guild_id: int) -> list[dict]:
     if not DISCORD_TOKEN:
         return []
@@ -97,7 +99,22 @@ async def send_channel_message(channel_id: int, content: str) -> bool:
             f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages",
             headers=headers, json={"content": content},
         )
-        return resp.status_code == 200
+        success = resp.status_code == 200
+        await _track_api_call(success)
+        return success
+
+
+async def _track_api_call(success: bool) -> None:
+    """Zählt Erfolg/Fehlschlag fürs Admin-Panel-API-Statistik-Diagramm.
+    Bewusst nur an den am häufigsten genutzten Stellen eingebaut (Broadcast,
+    Server-Verlassen), nicht an jedem einzelnen der vielen bot_api.py-Aufrufe --
+    das würde den Umfang sprengen, reicht für einen repräsentativen Trend."""
+    try:
+        import datetime as _dt
+        from bot.utils.db_helpers import record_api_call
+        await record_api_call(_dt.datetime.utcnow().strftime("%Y-%m-%d"), success)
+    except Exception:
+        pass  # Statistik darf den eigentlichen API-Aufruf nie zum Absturz bringen
 
 
 async def create_guild_invite(guild_id: int) -> str | None:
@@ -186,133 +203,73 @@ async def add_role_to_member(guild_id: int, user_id: int, role_id: int, reason: 
         return resp.status_code in (200, 204)
 
 
-async def set_channel_slowmode(channel_id: int, seconds: int) -> bool:
+async def create_guild_role(guild_id: int, name: str, color: int = 0) -> bool:
+    """Erstellt eine neue Rolle auf einem Server -- fürs Anwenden von
+    Rollen-Vorlagen (siehe /admin/rollen-vorlagen)."""
     if not DISCORD_TOKEN:
         return False
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     async with httpx.AsyncClient() as client:
-        resp = await client.patch(
-            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers,
-            json={"rate_limit_per_user": seconds},
+        resp = await client.post(
+            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/roles", headers=headers,
+            json={"name": name, "color": color},
         )
         return resp.status_code == 200
 
 
-async def set_channel_lock(guild_id: int, channel_id: int, locked: bool) -> bool:
-    """Sperrt/entsperrt einen Kanal für @everyone (send_messages=False bzw.
-    zurück auf Server-Standard). WICHTIG: die Discord-API ersetzt bei einem
-    PUT die KOMPLETTE Berechtigung für ein Ziel, nicht nur ein einzelnes Bit
-    -- deshalb erst die bestehenden allow/deny-Werte abfragen und nur das
-    SEND_MESSAGES-Bit (1<<11) gezielt ändern, statt versehentlich alle
-    anderen bereits gesetzten Berechtigungen für @everyone zu löschen."""
+async def send_ticket_button_panel(channel_id: int, embed: dict, custom_id: str,
+                                    button_label: str, button_emoji: str) -> bool:
+    """Sendet ein Ticket-Panel mit EINEM Button (neues, vereinfachtes System --
+    ersetzt das alte Auswahlmenü mit mehreren Ticket-Arten). Funktioniert per
+    REST, ohne dass das Dashboard selbst mit dem Discord-Gateway verbunden ist:
+    der custom_id 'ticket_panel_create_<id>' wird im Bot-Prozess über einen
+    generischen on_interaction-Dispatcher abgefangen (siehe bot/cogs/tickets.py)."""
     if not DISCORD_TOKEN:
         return False
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
-    send_messages_bit = 1 << 11
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{cfg.DISCORD_API_BASE}/channels/{channel_id}", headers=headers)
-        if resp.status_code != 200:
-            return False
-        channel_data = resp.json()
-
-        existing_allow, existing_deny = 0, 0
-        for overwrite in channel_data.get("permission_overwrites", []):
-            if overwrite.get("id") == str(guild_id) and overwrite.get("type") == 0:
-                existing_allow = int(overwrite.get("allow", 0))
-                existing_deny = int(overwrite.get("deny", 0))
-                break
-
-        if locked:
-            new_deny = existing_deny | send_messages_bit
-            new_allow = existing_allow & ~send_messages_bit
-        else:
-            new_deny = existing_deny & ~send_messages_bit
-            new_allow = existing_allow  # nicht explizit erlauben, nur die Sperre aufheben
-
-        put_resp = await client.put(
-            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/permissions/{guild_id}",
-            headers=headers, json={"allow": str(new_allow), "deny": str(new_deny), "type": 0},
-        )
-        return put_resp.status_code in (200, 204)
-
-
-async def set_member_nickname(guild_id: int, user_id: int, nickname: str) -> bool:
-    if not DISCORD_TOKEN:
-        return False
-    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
-    async with httpx.AsyncClient() as client:
-        resp = await client.patch(
-            f"{cfg.DISCORD_API_BASE}/guilds/{guild_id}/members/{user_id}", headers=headers,
-            json={"nick": nickname or None},
-        )
-        return resp.status_code == 200
-
-async def send_ticket_panel(guild_id: int, channel_id: int, design: str = "standard") -> bool:
-    """Sendet das Ticket-Panel (Embed + Dropdown/Button) direkt per Discord-REST-API
-    -- braucht dafür NICHT den Bot-Prozess, da wir schon den Bot-Token haben.
-    custom_id "ticket_type_select" bzw. "ticket_create_button" matcht exakt die
-    IDs, auf die bot/cogs/tickets.py als persistente Views lauscht."""
-    from bot.utils.db_helpers import get_ticket_categories, count_open_tickets_by_category
-
-    if not DISCORD_TOKEN:
-        return False
-
-    categories = await get_ticket_categories(guild_id)
-
-    design_colors = {"standard": 0x5865F2, "minimal": 0x99AAB5, "premium": 0xF1C40F, "dark": 0x1E1E28}
-    design_emojis = {"standard": "🎫", "minimal": "✉️", "premium": "⭐", "dark": "🌑"}
-    color = design_colors.get(design, design_colors["standard"])
-    emoji = design_emojis.get(design, "🎫")
-
-    fields = []
-    if categories:
-        lines = []
-        for c in categories[:25]:
-            line = f"{c.emoji} **{c.name}**"
-            if c.description:
-                line += f"\n> {c.description}"
-            if c.max_concurrent:
-                open_count = await count_open_tickets_by_category(c.id)
-                available = max(0, c.max_concurrent - open_count)
-                line += f"\n> Verfügbar: {available}/{c.max_concurrent}"
-            lines.append(line)
-        fields.append({"name": "📂 Verfügbare Setups", "value": "\n".join(lines), "inline": False})
-    if design == "premium":
-        fields.append({"name": "✨ Was dich erwartet",
-                        "value": "Ein privater Kanal nur für dich und unser Team.", "inline": False})
-
-    embed = {
-        "title": f"{emoji} Support-Ticket",
-        "description": "Klicke unten, um ein Ticket zu erstellen.\n" + ("─" * 28),
-        "color": color,
-        "fields": fields,
-        "footer": {"text": "Support-Team"},
-    }
-
-    if categories:
-        options = []
-        for c in categories[:25]:
-            opt = {"label": c.name[:100], "value": str(c.id)}
-            if c.description:
-                opt["description"] = c.description[:100]
-            if c.emoji:
-                opt["emoji"] = {"name": c.emoji}
-            options.append(opt)
-        components = [{"type": 1, "components": [{
-            "type": 3, "custom_id": "ticket_type_select", "placeholder": "…",
-            "min_values": 1, "max_values": 1, "options": options,
-        }]}]
-    else:
-        components = [{"type": 1, "components": [{
-            "type": 2, "style": 1, "label": "Ticket erstellen",
-            "emoji": {"name": "🎫"}, "custom_id": "ticket_create_button",
-        }]}]
-
-    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    components = [{
+        "type": 1,  # Action Row
+        "components": [{
+            "type": 2,  # Button
+            "style": 1,  # Primary
+            "custom_id": custom_id,
+            "label": button_label,
+            "emoji": {"name": button_emoji},
+        }],
+    }]
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages",
             headers=headers, json={"embeds": [embed], "components": components},
         )
-    return resp.status_code == 200
+        return resp.status_code == 200
+
+
+async def send_channel_embed_get_id(channel_id: int, embed: dict) -> int | None:
+    """Wie send_channel_message, aber mit Embed statt reinem Text -- gibt die
+    neue Nachrichten-ID zurück (z.B. um danach Reaktionen hinzuzufügen)."""
+    if not DISCORD_TOKEN:
+        return None
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages",
+            headers=headers, json={"embeds": [embed]},
+        )
+        if resp.status_code != 200:
+            return None
+        return int(resp.json()["id"])
+
+
+async def add_message_reaction(channel_id: int, message_id: int, emoji: str) -> bool:
+    if not DISCORD_TOKEN:
+        return False
+    import urllib.parse
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    encoded_emoji = urllib.parse.quote(emoji)
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{cfg.DISCORD_API_BASE}/channels/{channel_id}/messages/{message_id}/reactions/{encoded_emoji}/@me",
+            headers=headers,
+        )
+        return resp.status_code in (200, 204)
